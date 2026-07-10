@@ -58,6 +58,9 @@ type Client = {
   owner: string;
   email: string;
   phone: string;
+  address: string;
+  houseNumber: string;
+  city: string;
   value: string;
   probability: number;
   priority: "Alta" | "Media" | "Bassa";
@@ -75,6 +78,9 @@ const headerAliases: Record<keyof Omit<Client, "id" | "services">, string[]> = {
   owner: ["referente", "contatto", "owner", "responsabile", "nome referente"],
   email: ["email", "e mail", "mail"],
   phone: ["telefono", "phone", "cellulare", "tel"],
+  address: ["indirizzo", "via", "street", "address"],
+  houseNumber: ["civico", "numero civico", "n civico", "numero"],
+  city: ["citta", "city", "comune", "localita"],
   value: ["valore", "importo", "budget", "opportunita", "opportunity value"],
   probability: ["probabilita", "probability", "chance"],
   priority: ["priorita", "priority"],
@@ -96,6 +102,10 @@ function normalizedText(value: unknown) {
 function importedValue(value: unknown) {
   const numeric = Number(String(value ?? "0").replace(/[^0-9,.-]/g, "").replace(/\.(?=.*\.)/g, "").replace(",", "."));
   return `€ ${new Intl.NumberFormat("it-IT").format(Number.isFinite(numeric) ? numeric : 0)}`;
+}
+
+function clientLocation(client: Pick<Client, "address" | "houseNumber" | "city">) {
+  return [client.address, client.houseNumber, client.city].filter(Boolean).join(", ");
 }
 
 function parseDelimitedRows(text: string) {
@@ -278,7 +288,7 @@ export default function Home() {
   const filteredClients = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return crmClients.filter((client) => {
-      const matchesQuery = [client.company, client.sector, client.owner, client.email, client.phone, client.services.join(" ")]
+      const matchesQuery = [client.company, client.sector, client.owner, client.email, client.phone, client.address, client.houseNumber, client.city, client.services.join(" ")]
         .join(" ")
         .toLowerCase()
         .includes(normalized);
@@ -336,6 +346,9 @@ export default function Home() {
       owner: String(form.get("owner") || "Da assegnare"),
       email: String(form.get("email") || ""),
       phone: String(form.get("phone") || ""),
+      address: String(form.get("address") || ""),
+      houseNumber: String(form.get("houseNumber") || ""),
+      city: String(form.get("city") || ""),
       value: `€ ${new Intl.NumberFormat("it-IT").format(Number(form.get("value") || 0))}`,
       probability: Number(form.get("probability") || 25),
       priority: form.get("priority") as Client["priority"],
@@ -370,6 +383,9 @@ export default function Home() {
       owner: String(form.get("owner") || "Da assegnare").trim(),
       email: String(form.get("email") || "").trim(),
       phone: String(form.get("phone") || "").trim(),
+      address: String(form.get("address") || "").trim(),
+      houseNumber: String(form.get("houseNumber") || "").trim(),
+      city: String(form.get("city") || "").trim(),
       value: `€ ${new Intl.NumberFormat("it-IT").format(Number(form.get("value") || 0))}`,
       probability: Math.min(100, Math.max(1, Number(form.get("probability") || 25))),
       priority: form.get("priority") as Client["priority"],
@@ -478,6 +494,9 @@ export default function Home() {
             owner: String(read("owner") || "Da assegnare").trim(),
             email: String(read("email")).trim(),
             phone: String(read("phone")).trim(),
+            address: String(read("address")).trim(),
+            houseNumber: String(read("houseNumber")).trim(),
+            city: String(read("city")).trim(),
             value: importedValue(read("value")),
             probability: Math.min(100, Math.max(1, Number.isFinite(parsedProbability) ? parsedProbability : 25)),
             priority: rawPriority === "alta" ? "Alta" : rawPriority === "bassa" ? "Bassa" : "Media",
@@ -717,6 +736,7 @@ export default function Home() {
                                     <h4 className="font-semibold">{client.company}</h4>
                                     <p className="text-sm text-muted-foreground">{client.sector} · {client.owner}</p>
                                     <p className="mt-1 text-xs text-muted-foreground">{client.email} · {client.phone}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground">{clientLocation(client) || "Indirizzo da aggiungere"}</p>
                                   </div>
                                   <div className="text-right">
                                     <p className="font-semibold">{client.value}</p>
@@ -1170,6 +1190,15 @@ export default function Home() {
               <Field label="Telefono">
                 <input name="phone" className={inputClass} defaultValue={selectedClient.phone} />
               </Field>
+              <Field label="Indirizzo">
+                <input name="address" className={inputClass} defaultValue={selectedClient.address || ""} placeholder="Via o piazza" />
+              </Field>
+              <Field label="Numero civico">
+                <input name="houseNumber" className={inputClass} defaultValue={selectedClient.houseNumber || ""} placeholder="Es. 12/A" />
+              </Field>
+              <Field label="Citta">
+                <input name="city" className={inputClass} defaultValue={selectedClient.city || ""} placeholder="Es. Livorno" />
+              </Field>
               <Field label="Valore opportunita">
                 <input name="value" type="number" min="0" className={inputClass} defaultValue={selectedClient.value.replace(/[^0-9]/g, "")} />
               </Field>
@@ -1239,6 +1268,15 @@ export default function Home() {
               <Field label="Telefono">
                 <input name="phone" className={inputClass} placeholder="+39 ..." />
               </Field>
+              <Field label="Indirizzo">
+                <input name="address" className={inputClass} placeholder="Via o piazza" />
+              </Field>
+              <Field label="Numero civico">
+                <input name="houseNumber" className={inputClass} placeholder="Es. 12/A" />
+              </Field>
+              <Field label="Citta">
+                <input name="city" className={inputClass} placeholder="Es. Livorno" />
+              </Field>
               <Field label="Valore opportunita">
                 <input name="value" type="number" min="0" className={inputClass} defaultValue="5000" />
               </Field>
@@ -1299,7 +1337,7 @@ export default function Home() {
               <input className="sr-only" type="file" accept=".xlsx,.csv,.tsv,text/csv,text/tab-separated-values" onChange={previewLeadImport} />
             </label>
 
-            <p className="mt-4 text-xs leading-5 text-muted-foreground">Colonne riconosciute: Azienda o Ragione sociale, Settore, Referente, Email, Telefono, Valore, Probabilita, Priorita, Stato, Servizi, Follow-up e Note.</p>
+            <p className="mt-4 text-xs leading-5 text-muted-foreground">Colonne riconosciute: Azienda o Ragione sociale, Settore, Referente, Email, Telefono, Indirizzo, Civico, Citta, Valore, Probabilita, Priorita, Stato, Servizi, Follow-up e Note.</p>
 
             {importError && <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">{importError}</p>}
 
