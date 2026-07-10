@@ -32,6 +32,8 @@ La chiave `SUPABASE_SERVICE_ROLE_KEY` deve restare esclusivamente nelle variabil
 
 Il CRM usa Supabase Auth con email e password. Il middleware richiede una sessione valida per la web app e l'API CRM: ogni utente ha un archivio dati separato.
 
+Per rendere il CRM privato, disattiva `Allow new users to sign up` in Supabase, sezione Authentication > General Configuration. Gli utenti verranno creati esclusivamente dall'amministratore nel pannello Authentication > Users.
+
 ## Moduli inclusi nella prima vertical slice
 
 - Dashboard KPI
