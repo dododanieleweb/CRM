@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
+  { label: "Potenziali", icon: Target },
   { label: "Clienti", icon: Users },
   { label: "Pipeline", icon: Workflow },
   { label: "Pubblicita", icon: Megaphone },
@@ -50,6 +51,7 @@ const navItems = [
 ];
 
 type StageName = "Lead" | "Contattato" | "Telefonata" | "Appuntamento" | "Preventivo" | "Trattativa" | "Contratto";
+type ContactActivity = { id: string; type: "Email" | "Telefonata" | "Visita" | "Appuntamento"; at: string };
 
 type Client = {
   id: string;
@@ -66,13 +68,15 @@ type Client = {
   priority: "Alta" | "Media" | "Bassa";
   stage: StageName;
   services: string[];
+  activityLog: ContactActivity[];
   nextFollowUp: string;
   notes: string;
 };
 
 const stageNames: StageName[] = ["Lead", "Contattato", "Telefonata", "Appuntamento", "Preventivo", "Trattativa", "Contratto"];
+const clientStages: StageName[] = ["Appuntamento", "Preventivo", "Trattativa", "Contratto"];
 
-const headerAliases: Record<keyof Omit<Client, "id" | "services">, string[]> = {
+const headerAliases: Record<keyof Omit<Client, "id" | "services" | "activityLog">, string[]> = {
   company: ["azienda", "ragione sociale", "societa", "company", "cliente", "nome azienda", "nome"],
   sector: ["settore", "industry", "categoria"],
   owner: ["referente", "contatto", "owner", "responsabile", "nome referente"],
@@ -304,13 +308,23 @@ export default function Home() {
     [crmClients]
   );
 
+  const potentialClients = useMemo(
+    () => filteredClients.filter((client) => !clientStages.includes(client.stage)),
+    [filteredClients]
+  );
+
+  const actualClients = useMemo(
+    () => filteredClients.filter((client) => clientStages.includes(client.stage)),
+    [filteredClients]
+  );
+
   const clientsBySector = useMemo(() => {
-    return filteredClients.reduce<Record<string, Client[]>>((groups, client) => {
+    return actualClients.reduce<Record<string, Client[]>>((groups, client) => {
       const sector = client.sector || "Da qualificare";
       groups[sector] = [...(groups[sector] || []), client];
       return groups;
     }, {});
-  }, [filteredClients]);
+  }, [actualClients]);
 
   const selectedClient = useMemo(
     () => crmClients.find((client) => client.id === selectedClientId) ?? null,
@@ -355,6 +369,7 @@ export default function Home() {
       priority: form.get("priority") as Client["priority"],
       stage: "Lead",
       services,
+      activityLog: [],
       nextFollowUp: String(form.get("nextFollowUp") || ""),
       notes: String(form.get("notes") || "")
     };
@@ -365,7 +380,7 @@ export default function Home() {
 
     setCrmClients(nextClients);
     setLeadModalOpen(false);
-    setActiveModule("Clienti");
+    setActiveModule("Potenziali");
     event.currentTarget.reset();
   }
 
@@ -392,6 +407,7 @@ export default function Home() {
       priority: form.get("priority") as Client["priority"],
       stage: form.get("stage") as StageName,
       services,
+      activityLog: selectedClient.activityLog || [],
       nextFollowUp: String(form.get("nextFollowUp") || ""),
       notes: String(form.get("notes") || "")
     };
@@ -410,6 +426,31 @@ export default function Home() {
     setSelectedClientId(null);
     setSectorFilter("Tutti i settori");
     setClearClientsOpen(false);
+  }
+
+  async function recordContactActivity(clientId: string, type: ContactActivity["type"]) {
+    const nextClients = crmClients.map((client) => {
+      if (client.id !== clientId) return client;
+      const stage = type === "Email" ? "Contattato" : type === "Telefonata" ? "Telefonata" : client.stage;
+      return {
+        ...client,
+        stage,
+        activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type, at: new Date().toLocaleString("it-IT") }]
+      };
+    });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    if (saved) setCrmClients(nextClients);
+  }
+
+  async function promotePotentialClient(clientId: string) {
+    const nextClients = crmClients.map((client) => client.id === clientId
+      ? { ...client, stage: "Appuntamento" as StageName, activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type: "Appuntamento" as const, at: new Date().toLocaleString("it-IT") }] }
+      : client
+    );
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    if (!saved) return;
+    setCrmClients(nextClients);
+    setActiveModule("Clienti");
   }
 
   function runAi(action: string) {
@@ -493,7 +534,6 @@ export default function Home() {
           const rawCompany = read("company");
           if (!String(rawCompany).trim()) return null;
           const rawPriority = normalizedText(read("priority"));
-          const rawStage = String(read("stage")).trim();
           const parsedProbability = Number(String(read("probability") || "25").replace(/[^0-9]/g, ""));
           const servicesValue = values.servizi || values.services || values.service || "Consulenza marketing";
 
@@ -510,11 +550,12 @@ export default function Home() {
             value: importedValue(read("value")),
             probability: Math.min(100, Math.max(1, Number.isFinite(parsedProbability) ? parsedProbability : 25)),
             priority: rawPriority === "alta" ? "Alta" : rawPriority === "bassa" ? "Bassa" : "Media",
-            stage: stageNames.includes(rawStage as StageName) ? (rawStage as StageName) : "Lead",
+            stage: "Lead",
             services: String(servicesValue).split(/[,;|]/).map((service) => service.trim()).filter(Boolean),
+            activityLog: [],
             nextFollowUp: String(read("nextFollowUp")).trim(),
             notes: String(read("notes")).trim()
-          } satisfies Client;
+          } as Client;
         })
         .filter((lead): lead is Client => lead !== null);
 
@@ -532,6 +573,7 @@ export default function Home() {
     setImportModalOpen(false);
     setImportPreview([]);
     setImportFileName("");
+    setActiveModule("Potenziali");
   }
 
   return (
@@ -704,12 +746,64 @@ export default function Home() {
 
             {activeModule !== "Dashboard" && (
               <Card>
+                {activeModule === "Potenziali" && (
+                  <div>
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold">Potenziali clienti</h3>
+                        <p className="text-sm text-muted-foreground">{potentialClients.length} contatti da qualificare prima dell'appuntamento.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select aria-label="Filtra potenziali per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
+                          <option>Tutti i settori</option>
+                          {sectors.map((sector) => <option key={sector}>{sector}</option>)}
+                        </select>
+                        <button onClick={() => setImportModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:border-primary hover:text-primary">
+                          <Upload className="h-4 w-4" />
+                          Importa potenziali
+                        </button>
+                        <button onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+                          <Plus className="h-4 w-4" />
+                          Nuovo potenziale
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {potentialClients.map((client) => (
+                        <div key={client.id} className="rounded-lg border bg-background p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold">{client.company}</h4>
+                              <p className="text-sm text-muted-foreground">{client.sector} · {client.owner}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{client.email} · {client.phone}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{clientLocation(client) || "Indirizzo da aggiungere"}</p>
+                            </div>
+                            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{client.stage}</span>
+                          </div>
+                          <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <button onClick={() => recordContactActivity(client.id, "Email")} className="h-8 rounded-lg border px-3 text-xs font-semibold">Email</button>
+                            <button onClick={() => recordContactActivity(client.id, "Telefonata")} className="h-8 rounded-lg border px-3 text-xs font-semibold">Telefonata</button>
+                            <button onClick={() => recordContactActivity(client.id, "Visita")} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button>
+                            <button onClick={() => promotePotentialClient(client.id)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Conferma appuntamento
+                            </button>
+                            <button onClick={() => setSelectedClientId(client.id)} className="grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-primary" title="Apri scheda"><FileText className="h-4 w-4" /></button>
+                          </div>
+                          {(client.activityLog || []).length > 0 && <p className="mt-3 text-xs text-muted-foreground">Ultima attivita: {(client.activityLog || []).at(-1)?.type} · {(client.activityLog || []).at(-1)?.at}</p>}
+                        </div>
+                      ))}
+                      {!potentialClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun potenziale cliente per i filtri selezionati.</p>}
+                    </div>
+                  </div>
+                )}
+
                 {activeModule === "Clienti" && (
                   <div>
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-lg font-semibold">CRM clienti</h3>
-                        <p className="text-sm text-muted-foreground">{filteredClients.length} schede trovate con ricerca e filtro attivi</p>
+                        <h3 className="text-lg font-semibold">Clienti acquisiti</h3>
+                        <p className="text-sm text-muted-foreground">{actualClients.length} clienti con appuntamento confermato o trattativa in corso.</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <select
@@ -721,17 +815,13 @@ export default function Home() {
                           <option>Tutti i settori</option>
                           {sectors.map((sector) => <option key={sector}>{sector}</option>)}
                         </select>
-                        <button onClick={() => setImportModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:border-primary hover:text-primary">
-                          <Upload className="h-4 w-4" />
-                          Importa lead
-                        </button>
                         <button disabled={!crmClients.length} onClick={() => setClearClientsOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-4 text-sm font-semibold text-red-600 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
                           <Trash2 className="h-4 w-4" />
                           Svuota clienti
                         </button>
-                        <button onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+                        <button onClick={() => { setActiveModule("Potenziali"); setLeadModalOpen(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
                           <Plus className="h-4 w-4" />
-                          Aggiungi cliente
+                          Nuovo potenziale
                         </button>
                       </div>
                     </div>
@@ -775,7 +865,7 @@ export default function Home() {
                           </div>
                         </section>
                       ))}
-                      {!filteredClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna attivita trovata per i filtri selezionati.</p>}
+                      {!actualClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun cliente acquisito per i filtri selezionati.</p>}
                     </div>
                   </div>
                 )}
@@ -1201,6 +1291,12 @@ export default function Home() {
               <IconButton label="Chiudi scheda cliente" onClick={() => setSelectedClientId(null)}>
                 <X className="h-4 w-4" />
               </IconButton>
+            </div>
+            <div className="mb-5 rounded-lg border bg-background p-4">
+              <p className="mb-3 text-sm font-semibold">Cronologia contatti</p>
+              {(selectedClient.activityLog || []).length > 0 ? <div className="flex flex-wrap gap-2">
+                {(selectedClient.activityLog || []).map((activity) => <span key={activity.id} className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{activity.type} · {activity.at}</span>)}
+              </div> : <p className="text-sm text-muted-foreground">Nessuna attivita registrata.</p>}
             </div>
             <form key={selectedClient.id} onSubmit={saveClientDetails} className="grid gap-4 md:grid-cols-2">
               <Field label="Ragione sociale">
