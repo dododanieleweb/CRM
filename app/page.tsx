@@ -42,6 +42,7 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Potenziali", icon: Target },
   { label: "Clienti", icon: Users },
+  { label: "Team", icon: ShieldCheck },
   { label: "Pipeline", icon: Workflow },
   { label: "Pubblicita", icon: Megaphone },
   { label: "Social", icon: CalendarDays },
@@ -191,6 +192,24 @@ type CrmState = {
   adSlots: AdSlot[];
 };
 
+type TeamRole = "admin" | "commerciale" | "account" | "marketing";
+type TeamMember = { userId: string; email: string; role: TeamRole };
+type TeamInfo = { teamName: string; currentRole: TeamRole; members: TeamMember[] };
+
+const roleLabels: Record<TeamRole, string> = {
+  admin: "Admin",
+  commerciale: "Commerciale",
+  account: "Account",
+  marketing: "Marketing"
+};
+
+const roleDescriptions: Record<TeamRole, string> = {
+  admin: "Gestisce utenti, ruoli e tutti i dati del team.",
+  commerciale: "Gestisce potenziali, clienti e avanzamento commerciale.",
+  account: "Aggiorna schede cliente, attivita e follow-up.",
+  marketing: "Consulta il CRM e usa i dati per pianificazione e analisi."
+};
+
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return <section className={cn("rounded-lg border bg-card p-5 text-card-foreground shadow-soft", className)}>{children}</section>;
 }
@@ -250,6 +269,12 @@ export default function Home() {
   const [importError, setImportError] = useState("");
   const [storageReady, setStorageReady] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
+  const [teamError, setTeamError] = useState("");
+  const [memberModalOpen, setMemberModalOpen] = useState(false);
+  const [memberSaving, setMemberSaving] = useState(false);
+
+  const canEditCrm = teamInfo?.currentRole !== "marketing";
 
   useEffect(() => {
     async function loadCrmState() {
@@ -269,6 +294,19 @@ export default function Home() {
     }
     void loadCrmState();
   }, []);
+
+  async function loadTeam() {
+    try {
+      const response = await fetch("/api/team", { cache: "no-store" });
+      if (!response.ok) throw new Error();
+      setTeamInfo(await response.json() as TeamInfo);
+      setTeamError("");
+    } catch {
+      setTeamError("Il team sara disponibile dopo la migrazione Supabase.");
+    }
+  }
+
+  useEffect(() => { void loadTeam(); }, []);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -354,6 +392,7 @@ export default function Home() {
 
   async function addLead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canEditCrm) return;
     const form = new FormData(event.currentTarget);
     const services = String(form.get("services") || "Consulenza marketing")
       .split(",")
@@ -392,6 +431,7 @@ export default function Home() {
 
   async function saveClientDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canEditCrm) return;
     if (!selectedClient) return;
     const form = new FormData(event.currentTarget);
     const services = String(form.get("services") || "")
@@ -426,6 +466,7 @@ export default function Home() {
   }
 
   async function clearAllPotentials() {
+    if (!canEditCrm) return;
     const nextClients = crmClients.filter((client) => clientStages.includes(client.stage));
     const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
     if (!saved) return;
@@ -437,6 +478,7 @@ export default function Home() {
 
   async function saveContactActivity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canEditCrm) return;
     if (!activityEntry) return;
     const form = new FormData(event.currentTarget);
     const { clientId, type } = activityEntry;
@@ -462,6 +504,7 @@ export default function Home() {
   }
 
   async function promotePotentialClient(clientId: string) {
+    if (!canEditCrm) return;
     const nextClients = crmClients.map((client) => client.id === clientId
       ? { ...client, stage: "Appuntamento" as StageName, activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type: "Appuntamento" as const, at: new Date().toISOString().slice(0, 10), by: "Sistema", notes: "Appuntamento confermato" }] }
       : client
@@ -490,6 +533,7 @@ export default function Home() {
   }
 
   function moveClient(clientId: string, stage: StageName) {
+    if (!canEditCrm) return;
     setCrmClients((current) => current.map((client) => (client.id === clientId ? { ...client, stage } : client)));
     setDraggingClientId(null);
   }
@@ -513,6 +557,38 @@ export default function Home() {
 
   function signOut() {
     void fetch("/auth/signout", { method: "POST" }).finally(() => window.location.assign("/login"));
+  }
+
+  async function addTeamMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setMemberSaving(true);
+    try {
+      const response = await fetch("/api/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.get("email"), password: form.get("password"), role: form.get("role") })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Utente non creato");
+      setMemberModalOpen(false);
+      await loadTeam();
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : "Utente non creato");
+    } finally {
+      setMemberSaving(false);
+    }
+  }
+
+  async function updateTeamRole(userId: string, role: TeamRole) {
+    try {
+      const response = await fetch("/api/team", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, role }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Ruolo non aggiornato");
+      await loadTeam();
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : "Ruolo non aggiornato");
+    }
   }
 
   async function previewLeadImport(event: ChangeEvent<HTMLInputElement>) {
@@ -734,10 +810,11 @@ export default function Home() {
               )}
               <button
                 onClick={() => setLeadModalOpen(true)}
+                disabled={!canEditCrm}
                 className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
               >
                 <Plus className="h-4 w-4" />
-                Nuovo lead
+                {canEditCrm ? "Nuovo lead" : "Solo consultazione"}
               </button>
             </div>
           </header>
@@ -765,6 +842,22 @@ export default function Home() {
 
             {activeModule !== "Dashboard" && (
               <Card>
+                {activeModule === "Team" && (
+                  <div>
+                    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-primary">{teamInfo?.teamName || "Team BASE"}</p>
+                        <h3 className="text-lg font-semibold">Membri e ruoli</h3>
+                        <p className="text-sm text-muted-foreground">Il CRM e condiviso con le persone di questo team.</p>
+                      </div>
+                      {teamInfo?.currentRole === "admin" && <button onClick={() => setMemberModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground"><Plus className="h-4 w-4" />Aggiungi utente</button>}
+                    </div>
+                    {teamError && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">{teamError}</p>}
+                    {teamInfo ? <div className="space-y-3">
+                      {teamInfo.members.map((member) => <div key={member.userId} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background p-4"><div><p className="font-semibold">{member.email}</p><p className="mt-1 text-sm text-muted-foreground">{roleDescriptions[member.role]}</p></div>{teamInfo.currentRole === "admin" ? <select aria-label={`Ruolo di ${member.email}`} value={member.role} onChange={(event) => void updateTeamRole(member.userId, event.target.value as TeamRole)} className="h-10 rounded-lg border bg-card px-3 text-sm font-medium">{(Object.keys(roleLabels) as TeamRole[]).map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select> : <span className="rounded-full bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary">{roleLabels[member.role]}</span>}</div>)}
+                    </div> : !teamError && <p className="text-sm text-muted-foreground">Caricamento team...</p>}
+                  </div>
+                )}
                 {activeModule === "Potenziali" && (
                   <div>
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -777,15 +870,15 @@ export default function Home() {
                           <option>Tutti i settori</option>
                           {sectors.map((sector) => <option key={sector}>{sector}</option>)}
                         </select>
-                        <button onClick={() => setImportModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:border-primary hover:text-primary">
+                        <button disabled={!canEditCrm} onClick={() => setImportModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">
                           <Upload className="h-4 w-4" />
                           Importa potenziali
                         </button>
-                        <button disabled={!potentialClients.length} onClick={() => setClearPotentialsOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-4 text-sm font-semibold text-red-600 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+                        <button disabled={!potentialClients.length || !canEditCrm} onClick={() => setClearPotentialsOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-4 text-sm font-semibold text-red-600 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
                           <Trash2 className="h-4 w-4" />
                           Svuota potenziali
                         </button>
-                        <button onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+                        <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
                           <Plus className="h-4 w-4" />
                           Nuovo potenziale
                         </button>
@@ -1289,6 +1382,20 @@ export default function Home() {
               <Field label="Operatore"><input required name="by" className={inputClass} placeholder="Chi ha svolto l'attivita" /></Field>
               <label className="grid gap-1.5 text-sm font-medium"><span>Note</span><textarea required name="notes" className="min-h-28 rounded-lg border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary" placeholder="Esito, richiesta del contatto, prossimo passo..." /></label>
               <div className="flex justify-end gap-3"><button type="button" onClick={() => setActivityEntry(null)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button><button className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">Salva attività</button></div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {memberModalOpen && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40 p-4">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg rounded-lg border bg-card p-5 shadow-soft">
+            <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-primary">Team BASE</p><h2 className="mt-1 text-xl font-semibold">Aggiungi utente</h2></div><IconButton label="Chiudi" onClick={() => setMemberModalOpen(false)}><X className="h-4 w-4" /></IconButton></div>
+            <form onSubmit={addTeamMember} className="grid gap-4">
+              <Field label="Email"><input required name="email" type="email" className={inputClass} placeholder="collega@azienda.it" /></Field>
+              <Field label="Password temporanea"><input required minLength={8} name="password" type="password" className={inputClass} placeholder="Almeno 8 caratteri" /></Field>
+              <Field label="Ruolo"><select name="role" defaultValue="commerciale" className={inputClass}>{(Object.keys(roleLabels) as TeamRole[]).map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></Field>
+              <div className="flex justify-end gap-3"><button type="button" onClick={() => setMemberModalOpen(false)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button><button disabled={memberSaving} className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">{memberSaving ? "Creazione..." : "Crea utente"}</button></div>
             </form>
           </motion.div>
         </div>
