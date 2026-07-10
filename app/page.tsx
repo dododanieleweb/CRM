@@ -219,6 +219,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"Tutte" | Client["priority"]>("Tutte");
   const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -285,6 +286,11 @@ export default function Home() {
     });
   }, [crmClients, priorityFilter, query]);
 
+  const selectedClient = useMemo(
+    () => crmClients.find((client) => client.id === selectedClientId) ?? null,
+    [crmClients, selectedClientId]
+  );
+
   const totalPipeline = useMemo(() => filteredClients.length, [filteredClients]);
   const totalValue = useMemo(
     () => filteredClients.reduce((sum, client) => sum + Number(client.value.replace(/[^0-9]/g, "")), 0),
@@ -332,6 +338,37 @@ export default function Home() {
     setLeadModalOpen(false);
     setActiveModule("Clienti");
     event.currentTarget.reset();
+  }
+
+  async function saveClientDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedClient) return;
+    const form = new FormData(event.currentTarget);
+    const services = String(form.get("services") || "")
+      .split(",")
+      .map((service) => service.trim())
+      .filter(Boolean);
+    const updatedClient: Client = {
+      ...selectedClient,
+      company: String(form.get("company") || selectedClient.company).trim(),
+      sector: String(form.get("sector") || "Da qualificare").trim(),
+      owner: String(form.get("owner") || "Da assegnare").trim(),
+      email: String(form.get("email") || "").trim(),
+      phone: String(form.get("phone") || "").trim(),
+      value: `€ ${new Intl.NumberFormat("it-IT").format(Number(form.get("value") || 0))}`,
+      probability: Math.min(100, Math.max(1, Number(form.get("probability") || 25))),
+      priority: form.get("priority") as Client["priority"],
+      stage: form.get("stage") as StageName,
+      services,
+      nextFollowUp: String(form.get("nextFollowUp") || ""),
+      notes: String(form.get("notes") || "")
+    };
+    const nextClients = crmClients.map((client) => client.id === updatedClient.id ? updatedClient : client);
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    if (!saved) return;
+
+    setCrmClients(nextClients);
+    setSelectedClientId(null);
   }
 
   function runAi(action: string) {
@@ -663,8 +700,15 @@ export default function Home() {
                               </span>
                             ))}
                             <button
+                              onClick={() => setSelectedClientId(client.id)}
+                              className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              Apri scheda
+                            </button>
+                            <button
                               onClick={() => setCrmClients((current) => current.filter((item) => item.id !== client.id))}
-                              className="ml-auto grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-red-500"
+                              className="grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-red-500"
                               title="Elimina cliente"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1066,6 +1110,76 @@ export default function Home() {
           </div>
         </section>
       </div>
+
+      {selectedClient && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-lg border bg-card p-5 shadow-soft"
+          >
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-primary">Scheda cliente</p>
+                <h2 className="mt-1 text-xl font-semibold">{selectedClient.company}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Aggiorna contatto, opportunita, pipeline, servizi e note operative.</p>
+              </div>
+              <IconButton label="Chiudi scheda cliente" onClick={() => setSelectedClientId(null)}>
+                <X className="h-4 w-4" />
+              </IconButton>
+            </div>
+            <form key={selectedClient.id} onSubmit={saveClientDetails} className="grid gap-4 md:grid-cols-2">
+              <Field label="Ragione sociale">
+                <input required name="company" className={inputClass} defaultValue={selectedClient.company} />
+              </Field>
+              <Field label="Settore">
+                <input name="sector" className={inputClass} defaultValue={selectedClient.sector} />
+              </Field>
+              <Field label="Referente">
+                <input name="owner" className={inputClass} defaultValue={selectedClient.owner} />
+              </Field>
+              <Field label="Email">
+                <input name="email" type="email" className={inputClass} defaultValue={selectedClient.email} />
+              </Field>
+              <Field label="Telefono">
+                <input name="phone" className={inputClass} defaultValue={selectedClient.phone} />
+              </Field>
+              <Field label="Valore opportunita">
+                <input name="value" type="number" min="0" className={inputClass} defaultValue={selectedClient.value.replace(/[^0-9]/g, "")} />
+              </Field>
+              <Field label="Probabilita">
+                <input name="probability" type="number" min="1" max="100" className={inputClass} defaultValue={selectedClient.probability} />
+              </Field>
+              <Field label="Priorita">
+                <select name="priority" className={inputClass} defaultValue={selectedClient.priority}>
+                  <option>Alta</option>
+                  <option>Media</option>
+                  <option>Bassa</option>
+                </select>
+              </Field>
+              <Field label="Stato pipeline">
+                <select name="stage" className={inputClass} defaultValue={selectedClient.stage}>
+                  {stageNames.map((stage) => <option key={stage}>{stage}</option>)}
+                </select>
+              </Field>
+              <Field label="Prossimo follow-up">
+                <input name="nextFollowUp" type="date" className={inputClass} defaultValue={selectedClient.nextFollowUp} />
+              </Field>
+              <Field label="Servizi">
+                <input name="services" className={inputClass} defaultValue={selectedClient.services.join(", ")} placeholder="SEO, Banner, Meta Ads" />
+              </Field>
+              <label className="grid gap-1.5 text-sm font-medium md:col-span-2">
+                <span>Note</span>
+                <textarea name="notes" defaultValue={selectedClient.notes} className="min-h-28 rounded-lg border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary" />
+              </label>
+              <div className="flex justify-end gap-3 md:col-span-2">
+                <button type="button" onClick={() => setSelectedClientId(null)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button>
+                <button className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">Salva modifiche</button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
 
       {leadModalOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
