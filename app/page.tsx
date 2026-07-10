@@ -358,7 +358,7 @@ export default function Home() {
 
   function downloadReport() {
     const lines = [
-      "Osservatore CRM - Report",
+      "BASE CRM - Report",
       `Clienti: ${filteredClients.length}`,
       `Pipeline: € ${new Intl.NumberFormat("it-IT").format(totalValue)}`,
       "",
@@ -469,7 +469,7 @@ export default function Home() {
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Osservatore</p>
+              <p className="text-sm text-muted-foreground">BASE</p>
               <h1 className="text-xl font-semibold">CRM</h1>
             </div>
           </div>
@@ -515,7 +515,7 @@ export default function Home() {
                     <Sparkles className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Osservatore</p>
+                    <p className="text-sm text-muted-foreground">BASE</p>
                     <p className="font-semibold">CRM</p>
                   </div>
                 </div>

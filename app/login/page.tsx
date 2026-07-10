@@ -41,7 +41,7 @@ export default function LoginPage() {
       <section className="w-full max-w-md rounded-lg border bg-card p-6 shadow-soft">
         <div className="mb-7 flex items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-lg bg-primary text-primary-foreground"><Sparkles className="h-5 w-5" /></div>
-          <div><p className="text-sm text-muted-foreground">Osservatore</p><h1 className="text-xl font-semibold">CRM</h1></div>
+          <div><p className="text-sm text-muted-foreground">BASE</p><h1 className="text-xl font-semibold">CRM</h1></div>
         </div>
         <div className="mb-6"><LockKeyhole className="mb-3 h-5 w-5 text-primary" /><h2 className="text-2xl font-semibold">{mode === "login" ? "Accedi" : "Crea un account"}</h2><p className="mt-1 text-sm text-muted-foreground">Area riservata al team.</p></div>
         {!configured ? <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600">Supabase non e configurato. Imposta le variabili d'ambiente prima del deploy.</p> : <form onSubmit={submit} className="grid gap-4">
