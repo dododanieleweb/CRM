@@ -235,7 +235,7 @@ export default function Home() {
   const [sectorFilter, setSectorFilter] = useState("Tutti i settori");
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
-  const [clearClientsOpen, setClearClientsOpen] = useState(false);
+  const [clearPotentialsOpen, setClearPotentialsOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -419,13 +419,14 @@ export default function Home() {
     setSelectedClientId(null);
   }
 
-  async function clearAllClients() {
-    const saved = await persistCrmState({ darkMode, crmClients: [], socialItems, adSlots });
+  async function clearAllPotentials() {
+    const nextClients = crmClients.filter((client) => clientStages.includes(client.stage));
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
     if (!saved) return;
-    setCrmClients([]);
+    setCrmClients(nextClients);
     setSelectedClientId(null);
     setSectorFilter("Tutti i settori");
-    setClearClientsOpen(false);
+    setClearPotentialsOpen(false);
   }
 
   async function recordContactActivity(clientId: string, type: ContactActivity["type"]) {
@@ -762,6 +763,10 @@ export default function Home() {
                           <Upload className="h-4 w-4" />
                           Importa potenziali
                         </button>
+                        <button disabled={!potentialClients.length} onClick={() => setClearPotentialsOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-4 text-sm font-semibold text-red-600 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+                          <Trash2 className="h-4 w-4" />
+                          Svuota potenziali
+                        </button>
                         <button onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
                           <Plus className="h-4 w-4" />
                           Nuovo potenziale
@@ -815,10 +820,6 @@ export default function Home() {
                           <option>Tutti i settori</option>
                           {sectors.map((sector) => <option key={sector}>{sector}</option>)}
                         </select>
-                        <button disabled={!crmClients.length} onClick={() => setClearClientsOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-4 text-sm font-semibold text-red-600 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
-                          <Trash2 className="h-4 w-4" />
-                          Svuota clienti
-                        </button>
                         <button onClick={() => { setActiveModule("Potenziali"); setLeadModalOpen(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
                           <Plus className="h-4 w-4" />
                           Nuovo potenziale
@@ -1261,15 +1262,15 @@ export default function Home() {
         </section>
       </div>
 
-      {clearClientsOpen && (
+      {clearPotentialsOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md rounded-lg border bg-card p-5 shadow-soft">
             <div className="mb-4 grid h-10 w-10 place-items-center rounded-lg bg-red-500/10 text-red-600"><Trash2 className="h-5 w-5" /></div>
-            <h2 className="text-xl font-semibold">Svuotare tutti i clienti?</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Verranno eliminati {crmClients.length} clienti e le relative opportunita dalla lista CRM. Questa azione non puo essere annullata.</p>
+            <h2 className="text-xl font-semibold">Svuotare tutti i potenziali?</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Verranno eliminati {potentialClients.length} potenziali clienti e le loro attivita di contatto. I clienti con appuntamento confermato resteranno invariati. Questa azione non puo essere annullata.</p>
             <div className="mt-6 flex justify-end gap-3">
-              <button type="button" onClick={() => setClearClientsOpen(false)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button>
-              <button onClick={clearAllClients} className="inline-flex h-10 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white"><Trash2 className="h-4 w-4" />Elimina tutti</button>
+              <button type="button" onClick={() => setClearPotentialsOpen(false)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button>
+              <button onClick={clearAllPotentials} className="inline-flex h-10 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white"><Trash2 className="h-4 w-4" />Elimina potenziali</button>
             </div>
           </motion.div>
         </div>
