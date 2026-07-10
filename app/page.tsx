@@ -51,7 +51,7 @@ const navItems = [
 ];
 
 type StageName = "Lead" | "Contattato" | "Telefonata" | "Appuntamento" | "Preventivo" | "Trattativa" | "Contratto";
-type ContactActivity = { id: string; type: "Email" | "Telefonata" | "Visita" | "Appuntamento"; at: string };
+type ContactActivity = { id: string; type: "Email" | "Telefonata" | "Visita" | "Appuntamento"; at: string; by: string; notes: string };
 
 type Client = {
   id: string;
@@ -236,6 +236,7 @@ export default function Home() {
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [clearPotentialsOpen, setClearPotentialsOpen] = useState(false);
+  const [activityEntry, setActivityEntry] = useState<{ clientId: string; type: ContactActivity["type"] } | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -329,6 +330,11 @@ export default function Home() {
   const selectedClient = useMemo(
     () => crmClients.find((client) => client.id === selectedClientId) ?? null,
     [crmClients, selectedClientId]
+  );
+
+  const activityClient = useMemo(
+    () => activityEntry ? crmClients.find((client) => client.id === activityEntry.clientId) ?? null : null,
+    [activityEntry, crmClients]
   );
 
   const totalPipeline = useMemo(() => filteredClients.length, [filteredClients]);
@@ -429,23 +435,35 @@ export default function Home() {
     setClearPotentialsOpen(false);
   }
 
-  async function recordContactActivity(clientId: string, type: ContactActivity["type"]) {
+  async function saveContactActivity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activityEntry) return;
+    const form = new FormData(event.currentTarget);
+    const { clientId, type } = activityEntry;
     const nextClients = crmClients.map((client) => {
       if (client.id !== clientId) return client;
       const stage = type === "Email" ? "Contattato" : type === "Telefonata" ? "Telefonata" : client.stage;
       return {
         ...client,
         stage,
-        activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type, at: new Date().toLocaleString("it-IT") }]
+        activityLog: [...(client.activityLog || []), {
+          id: crypto.randomUUID(),
+          type,
+          at: String(form.get("date") || new Date().toISOString().slice(0, 10)),
+          by: String(form.get("by") || "Non indicato").trim(),
+          notes: String(form.get("notes") || "").trim()
+        }]
       };
     });
     const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
-    if (saved) setCrmClients(nextClients);
+    if (!saved) return;
+    setCrmClients(nextClients);
+    setActivityEntry(null);
   }
 
   async function promotePotentialClient(clientId: string) {
     const nextClients = crmClients.map((client) => client.id === clientId
-      ? { ...client, stage: "Appuntamento" as StageName, activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type: "Appuntamento" as const, at: new Date().toLocaleString("it-IT") }] }
+      ? { ...client, stage: "Appuntamento" as StageName, activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type: "Appuntamento" as const, at: new Date().toISOString().slice(0, 10), by: "Sistema", notes: "Appuntamento confermato" }] }
       : client
     );
     const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
@@ -786,16 +804,16 @@ export default function Home() {
                             <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{client.stage}</span>
                           </div>
                           <div className="mt-4 flex flex-wrap items-center gap-2">
-                            <button onClick={() => recordContactActivity(client.id, "Email")} className="h-8 rounded-lg border px-3 text-xs font-semibold">Email</button>
-                            <button onClick={() => recordContactActivity(client.id, "Telefonata")} className="h-8 rounded-lg border px-3 text-xs font-semibold">Telefonata</button>
-                            <button onClick={() => recordContactActivity(client.id, "Visita")} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button>
+                            <button onClick={() => setActivityEntry({ clientId: client.id, type: "Email" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Email</button>
+                            <button onClick={() => setActivityEntry({ clientId: client.id, type: "Telefonata" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Telefonata</button>
+                            <button onClick={() => setActivityEntry({ clientId: client.id, type: "Visita" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button>
                             <button onClick={() => promotePotentialClient(client.id)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground">
                               <CheckCircle2 className="h-3.5 w-3.5" />
                               Conferma appuntamento
                             </button>
                             <button onClick={() => setSelectedClientId(client.id)} className="grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-primary" title="Apri scheda"><FileText className="h-4 w-4" /></button>
                           </div>
-                          {(client.activityLog || []).length > 0 && <p className="mt-3 text-xs text-muted-foreground">Ultima attivita: {(client.activityLog || []).at(-1)?.type} · {(client.activityLog || []).at(-1)?.at}</p>}
+                          {(client.activityLog || []).length > 0 && <p className="mt-3 text-xs text-muted-foreground">Ultima attivita: {(client.activityLog || []).at(-1)?.type} · {(client.activityLog || []).at(-1)?.at} · {(client.activityLog || []).at(-1)?.by || "Non indicato"}</p>}
                         </div>
                       ))}
                       {!potentialClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun potenziale cliente per i filtri selezionati.</p>}
@@ -1262,6 +1280,20 @@ export default function Home() {
         </section>
       </div>
 
+      {activityEntry && activityClient && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40 p-4">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg rounded-lg border bg-card p-5 shadow-soft">
+            <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-primary">Registra attivita</p><h2 className="mt-1 text-xl font-semibold">{activityEntry.type} · {activityClient.company}</h2></div><IconButton label="Chiudi registrazione attività" onClick={() => setActivityEntry(null)}><X className="h-4 w-4" /></IconButton></div>
+            <form onSubmit={saveContactActivity} className="grid gap-4">
+              <Field label="Data attività"><input required name="date" type="date" className={inputClass} defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
+              <Field label="Operatore"><input required name="by" className={inputClass} placeholder="Chi ha svolto l'attivita" /></Field>
+              <label className="grid gap-1.5 text-sm font-medium"><span>Note</span><textarea required name="notes" className="min-h-28 rounded-lg border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary" placeholder="Esito, richiesta del contatto, prossimo passo..." /></label>
+              <div className="flex justify-end gap-3"><button type="button" onClick={() => setActivityEntry(null)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button><button className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">Salva attività</button></div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
       {clearPotentialsOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md rounded-lg border bg-card p-5 shadow-soft">
@@ -1294,9 +1326,9 @@ export default function Home() {
               </IconButton>
             </div>
             <div className="mb-5 rounded-lg border bg-background p-4">
-              <p className="mb-3 text-sm font-semibold">Cronologia contatti</p>
-              {(selectedClient.activityLog || []).length > 0 ? <div className="flex flex-wrap gap-2">
-                {(selectedClient.activityLog || []).map((activity) => <span key={activity.id} className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{activity.type} · {activity.at}</span>)}
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Cronologia contatti</p><div className="flex gap-2"><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Email" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Email</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Telefonata" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Telefonata</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Visita" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button></div></div>
+              {(selectedClient.activityLog || []).length > 0 ? <div className="space-y-2">
+                {[...(selectedClient.activityLog || [])].reverse().map((activity) => <div key={activity.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-semibold">{activity.type}</span><span className="text-muted-foreground">{activity.at} · {activity.by || "Non indicato"}</span></div>{activity.notes && <p className="mt-2 text-muted-foreground">{activity.notes}</p>}</div>)}
               </div> : <p className="text-sm text-muted-foreground">Nessuna attivita registrata.</p>}
             </div>
             <form key={selectedClient.id} onSubmit={saveClientDetails} className="grid gap-4 md:grid-cols-2">
