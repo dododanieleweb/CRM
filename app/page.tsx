@@ -218,6 +218,7 @@ export default function Home() {
   const [activeModule, setActiveModule] = useState("Dashboard");
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"Tutte" | Client["priority"]>("Tutte");
+  const [sectorFilter, setSectorFilter] = useState("Tutti i settori");
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -282,9 +283,23 @@ export default function Home() {
         .toLowerCase()
         .includes(normalized);
       const matchesPriority = priorityFilter === "Tutte" || client.priority === priorityFilter;
-      return matchesQuery && matchesPriority;
+      const matchesSector = sectorFilter === "Tutti i settori" || client.sector === sectorFilter;
+      return matchesQuery && matchesPriority && matchesSector;
     });
-  }, [crmClients, priorityFilter, query]);
+  }, [crmClients, priorityFilter, query, sectorFilter]);
+
+  const sectors = useMemo(
+    () => Array.from(new Set(crmClients.map((client) => client.sector).filter(Boolean))).sort((first, second) => first.localeCompare(second, "it")),
+    [crmClients]
+  );
+
+  const clientsBySector = useMemo(() => {
+    return filteredClients.reduce<Record<string, Client[]>>((groups, client) => {
+      const sector = client.sector || "Da qualificare";
+      groups[sector] = [...(groups[sector] || []), client];
+      return groups;
+    }, {});
+  }, [filteredClients]);
 
   const selectedClient = useMemo(
     () => crmClients.find((client) => client.id === selectedClientId) ?? null,
@@ -667,7 +682,16 @@ export default function Home() {
                         <h3 className="text-lg font-semibold">CRM clienti</h3>
                         <p className="text-sm text-muted-foreground">{filteredClients.length} schede trovate con ricerca e filtro attivi</p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          aria-label="Filtra per settore"
+                          value={sectorFilter}
+                          onChange={(event) => setSectorFilter(event.target.value)}
+                          className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary"
+                        >
+                          <option>Tutti i settori</option>
+                          {sectors.map((sector) => <option key={sector}>{sector}</option>)}
+                        </select>
                         <button onClick={() => setImportModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:border-primary hover:text-primary">
                           <Upload className="h-4 w-4" />
                           Importa lead
@@ -678,44 +702,46 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
-                    <div className="grid gap-3">
-                      {filteredClients.map((client) => (
-                        <div key={client.id} className="rounded-lg border bg-background p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <h4 className="font-semibold">{client.company}</h4>
-                              <p className="text-sm text-muted-foreground">{client.sector} · {client.owner}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">{client.email} · {client.phone}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-semibold">{client.value}</p>
-                              <p className="text-sm text-muted-foreground">{client.stage} · {client.probability}%</p>
-                            </div>
+                    <div className="space-y-6">
+                      {Object.entries(clientsBySector).sort(([first], [second]) => first.localeCompare(second, "it")).map(([sector, clients]) => (
+                        <section key={sector}>
+                          <div className="mb-3 flex items-center justify-between border-b pb-2">
+                            <h4 className="font-semibold">{sector}</h4>
+                            <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{clients.length} attivita</span>
                           </div>
-                          <div className="mt-4 flex flex-wrap items-center gap-2">
-                            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{client.priority}</span>
-                            {client.services.map((service) => (
-                              <span key={service} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                                {service}
-                              </span>
+                          <div className="grid gap-3">
+                            {clients.map((client) => (
+                              <div key={client.id} className="rounded-lg border bg-background p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <h4 className="font-semibold">{client.company}</h4>
+                                    <p className="text-sm text-muted-foreground">{client.sector} · {client.owner}</p>
+                                    <p className="mt-1 text-xs text-muted-foreground">{client.email} · {client.phone}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-semibold">{client.value}</p>
+                                    <p className="text-sm text-muted-foreground">{client.stage} · {client.probability}%</p>
+                                  </div>
+                                </div>
+                                <div className="mt-4 flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{client.priority}</span>
+                                  {client.services.map((service) => (
+                                    <span key={service} className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">{service}</span>
+                                  ))}
+                                  <button onClick={() => setSelectedClientId(client.id)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                                    <FileText className="h-3.5 w-3.5" />
+                                    Apri scheda
+                                  </button>
+                                  <button onClick={() => setCrmClients((current) => current.filter((item) => item.id !== client.id))} className="grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-red-500" title="Elimina cliente">
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
                             ))}
-                            <button
-                              onClick={() => setSelectedClientId(client.id)}
-                              className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary"
-                            >
-                              <FileText className="h-3.5 w-3.5" />
-                              Apri scheda
-                            </button>
-                            <button
-                              onClick={() => setCrmClients((current) => current.filter((item) => item.id !== client.id))}
-                              className="grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-red-500"
-                              title="Elimina cliente"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
                           </div>
-                        </div>
+                        </section>
                       ))}
+                      {!filteredClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna attivita trovata per i filtri selezionati.</p>}
                     </div>
                   </div>
                 )}
