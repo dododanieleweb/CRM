@@ -231,6 +231,7 @@ export default function Home() {
   const [sectorFilter, setSectorFilter] = useState("Tutti i settori");
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [clearClientsOpen, setClearClientsOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -400,6 +401,15 @@ export default function Home() {
 
     setCrmClients(nextClients);
     setSelectedClientId(null);
+  }
+
+  async function clearAllClients() {
+    const saved = await persistCrmState({ darkMode, crmClients: [], socialItems, adSlots });
+    if (!saved) return;
+    setCrmClients([]);
+    setSelectedClientId(null);
+    setSectorFilter("Tutti i settori");
+    setClearClientsOpen(false);
   }
 
   function runAi(action: string) {
@@ -714,6 +724,10 @@ export default function Home() {
                         <button onClick={() => setImportModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:border-primary hover:text-primary">
                           <Upload className="h-4 w-4" />
                           Importa lead
+                        </button>
+                        <button disabled={!crmClients.length} onClick={() => setClearClientsOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-4 text-sm font-semibold text-red-600 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+                          <Trash2 className="h-4 w-4" />
+                          Svuota clienti
                         </button>
                         <button onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
                           <Plus className="h-4 w-4" />
@@ -1156,6 +1170,20 @@ export default function Home() {
           </div>
         </section>
       </div>
+
+      {clearClientsOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md rounded-lg border bg-card p-5 shadow-soft">
+            <div className="mb-4 grid h-10 w-10 place-items-center rounded-lg bg-red-500/10 text-red-600"><Trash2 className="h-5 w-5" /></div>
+            <h2 className="text-xl font-semibold">Svuotare tutti i clienti?</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Verranno eliminati {crmClients.length} clienti e le relative opportunita dalla lista CRM. Questa azione non puo essere annullata.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setClearClientsOpen(false)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button>
+              <button onClick={clearAllClients} className="inline-flex h-10 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white"><Trash2 className="h-4 w-4" />Elimina tutti</button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {selectedClient && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
