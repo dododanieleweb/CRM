@@ -14,12 +14,12 @@
     "@tanstack/react-query": "^5.51.15",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "exceljs": "^4.4.0",
     "framer-motion": "^11.3.24",
     "lucide-react": "^0.468.0",
     "next": "^14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "read-excel-file": "^9.3.1",
     "tailwind-merge": "^2.4.0"
   },
   "devDependencies": {

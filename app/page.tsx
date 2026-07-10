@@ -35,7 +35,7 @@ import {
   X
 } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
-import ExcelJS from "exceljs";
+import readXlsxFile from "read-excel-file/browser";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -392,18 +392,11 @@ export default function Home() {
       if (extension === "csv" || extension === "tsv") {
         rows = rowsToObjects(parseDelimitedRows(await file.text()));
       } else if (extension === "xlsx") {
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(await file.arrayBuffer());
-        const firstSheet = workbook.worksheets[0];
+        const [firstSheet] = await readXlsxFile(file);
         if (!firstSheet) throw new Error("Il file non contiene fogli leggibili.");
-        const headerValues = firstSheet.getRow(1).values;
-        const headers = (Array.isArray(headerValues) ? headerValues.slice(1) : []).map((value) => String(value ?? ""));
-        rows = [];
-        firstSheet.eachRow((row, rowNumber) => {
-          if (rowNumber <= 1) return;
-          const values = headers.map((_, index) => row.getCell(index + 1).text);
-          if (values.some(Boolean)) rows.push(Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
-        });
+        rows = rowsToObjects(
+          firstSheet.data.map((row) => row.map((value) => value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? "")))
+        );
       } else {
         throw new Error("Formato non supportato. Usa un file .xlsx, .csv o .tsv.");
       }
