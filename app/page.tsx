@@ -46,20 +46,20 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
+  { label: "Lead", icon: Target },
   { label: "Aziende", icon: Building2 },
   { label: "Contatti", icon: ContactRound },
   { label: "Opportunita", icon: BriefcaseBusiness },
-  { label: "Email/Preventivi", icon: ReceiptText },
-  { label: "Lead", icon: Target },
-  { label: "Clienti", icon: Users },
-  { label: "Agenda", icon: CalendarDays },
-  { label: "Team", icon: ShieldCheck },
   { label: "Pipeline", icon: Workflow },
+  { label: "Agenda", icon: CalendarDays },
+  { label: "Email/Preventivi", icon: ReceiptText },
+  { label: "Clienti", icon: Users },
   { label: "Pubblicita", icon: Megaphone },
   { label: "Social", icon: CalendarDays },
   { label: "SEO", icon: Globe2 },
   { label: "Documenti", icon: FileText },
-  { label: "AI Studio", icon: Bot }
+  { label: "AI Studio", icon: Bot },
+  { label: "Team", icon: ShieldCheck }
 ];
 
 type StageName = "Lead" | "Contattato" | "Telefonata" | "Appuntamento" | "Preventivo" | "Trattativa" | "Contratto";
