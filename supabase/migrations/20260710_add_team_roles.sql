@@ -42,9 +42,14 @@ where state.owner_id = team.created_by and state.team_id is null;
 alter table public.crm_state drop constraint if exists crm_state_pkey;
 alter table public.crm_state alter column owner_id drop not null;
 
-create unique index if not exists crm_state_one_row_per_team
-  on public.crm_state (team_id)
-  where team_id is not null;
+drop index if exists public.crm_state_one_row_per_team;
+
+do $$
+begin
+  alter table public.crm_state add constraint crm_state_team_id_key unique (team_id);
+exception
+  when duplicate_object then null;
+end $$;
 
 alter table public.crm_teams enable row level security;
 alter table public.team_members enable row level security;

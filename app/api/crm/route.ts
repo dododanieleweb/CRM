@@ -79,7 +79,8 @@ export async function GET() {
     const team = await currentTeam();
     if (team === null) return NextResponse.json({ error: "Autenticazione o team non valido" }, { status: 401 });
     return NextResponse.json(await readState(team));
-  } catch {
+  } catch (error) {
+    console.error("CRM read error", error);
     return NextResponse.json({ error: "Archivio CRM non leggibile" }, { status: 500 });
   }
 }
@@ -96,7 +97,8 @@ export async function POST(request: Request) {
 
     await saveState(state, team);
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (error) {
+    console.error("CRM save error", error);
     return NextResponse.json({ error: "Salvataggio CRM non riuscito" }, { status: 500 });
   }
 }
