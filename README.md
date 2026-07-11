@@ -30,6 +30,8 @@ Apri `http://localhost:3000`.
 
 La chiave `SUPABASE_SERVICE_ROLE_KEY` deve restare esclusivamente nelle variabili server di Netlify e non va mai inserita in file client o nel repository.
 
+Per usare la ricerca online dei lead, crea una chiave Google Places API e aggiungi su Netlify anche `GOOGLE_PLACES_API_KEY`. Anche questa chiave deve restare solo nelle variabili server.
+
 Il CRM usa Supabase Auth con email e password. Il middleware richiede una sessione valida per la web app e l'API CRM. I dati sono condivisi tra i membri dello stesso team: l'Admin puo creare utenti e assegnare ruoli dalla sezione Team.
 
 Per rendere il CRM privato, disattiva `Allow new users to sign up` in Supabase, sezione Authentication > General Configuration. Il primo utente gia presente diventa Admin dopo l'esecuzione della seconda migrazione; potra creare gli altri utenti dalla sezione Team.

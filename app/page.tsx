@@ -104,6 +104,22 @@ type Client = {
   notes: string;
 };
 
+type LeadSearchCandidate = {
+  id: string;
+  company: string;
+  sector: string;
+  owner: string;
+  email: string;
+  phone: string;
+  address: string;
+  houseNumber: string;
+  city: string;
+  formattedAddress: string;
+  website: string;
+  sourceUrl: string;
+  notes: string;
+};
+
 type PriceItem = {
   id: string;
   name: string;
@@ -437,6 +453,10 @@ export default function Home() {
   const [importPreview, setImportPreview] = useState<Client[]>([]);
   const [importFileName, setImportFileName] = useState("");
   const [importError, setImportError] = useState("");
+  const [onlineSearchResults, setOnlineSearchResults] = useState<LeadSearchCandidate[]>([]);
+  const [selectedOnlineLeadIds, setSelectedOnlineLeadIds] = useState<string[]>([]);
+  const [onlineSearchLoading, setOnlineSearchLoading] = useState(false);
+  const [onlineSearchError, setOnlineSearchError] = useState("");
   const [storageReady, setStorageReady] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
@@ -1009,6 +1029,65 @@ export default function Home() {
     setActiveModule("Lead");
   }
 
+  async function searchOnlineLeads(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setOnlineSearchLoading(true);
+    setOnlineSearchError("");
+    setOnlineSearchResults([]);
+    setSelectedOnlineLeadIds([]);
+    try {
+      const response = await fetch("/api/lead-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activity: form.get("activity"),
+          city: form.get("city"),
+          limit: form.get("limit")
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Ricerca online non riuscita.");
+      setOnlineSearchResults(result.leads || []);
+    } catch (error) {
+      setOnlineSearchError(error instanceof Error ? error.message : "Ricerca online non riuscita.");
+    } finally {
+      setOnlineSearchLoading(false);
+    }
+  }
+
+  async function importSelectedOnlineLeads() {
+    if (!canEditCrm) return;
+    const selected = onlineSearchResults.filter((lead) => selectedOnlineLeadIds.includes(lead.id));
+    const existing = new Set(crmClients.map((client) => `${normalizedText(client.company)}|${normalizedText(client.phone)}`));
+    const newLeads: Client[] = selected
+      .filter((lead) => !existing.has(`${normalizedText(lead.company)}|${normalizedText(lead.phone)}`))
+      .map((lead) => ({
+        id: `online-${crypto.randomUUID()}`,
+        company: lead.company,
+        sector: lead.sector || "Da qualificare",
+        owner: lead.owner || "Da assegnare",
+        email: lead.email || "",
+        phone: lead.phone || "",
+        address: lead.address || lead.formattedAddress || "",
+        houseNumber: lead.houseNumber || "",
+        city: lead.city || "",
+        value: "€ 0",
+        probability: 25,
+        priority: "Media",
+        stage: "Lead",
+        services: ["Consulenza marketing"],
+        activityLog: [],
+        nextFollowUp: "",
+        notes: lead.notes || [lead.formattedAddress, lead.website, lead.sourceUrl].filter(Boolean).join("\n")
+      }));
+    const nextClients = [...newLeads, ...crmClients];
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
+    if (!saved) return;
+    setCrmClients(nextClients);
+    setSelectedOnlineLeadIds([]);
+  }
+
   return (
     <main className={cn("min-h-screen", darkMode && "dark")}>
       <div className="flex min-h-screen bg-background text-foreground">
@@ -1490,6 +1569,43 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
+                    <form onSubmit={searchOnlineLeads} className="mb-5 grid gap-3 rounded-lg border bg-background p-4 lg:grid-cols-[1fr_1fr_0.6fr_auto]">
+                      <Field label="Attività da cercare"><input required name="activity" className={inputClass} placeholder="Es. ristoranti, dentisti, palestre" /></Field>
+                      <Field label="Città"><input required name="city" className={inputClass} placeholder="Es. Livorno" /></Field>
+                      <Field label="Risultati"><input name="limit" type="number" min="1" max="20" defaultValue="10" className={inputClass} /></Field>
+                      <div className="flex items-end"><button disabled={onlineSearchLoading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"><Search className="h-4 w-4" />{onlineSearchLoading ? "Ricerca..." : "Cerca online"}</button></div>
+                      <p className="text-xs leading-5 text-muted-foreground lg:col-span-4">La ricerca usa Google Places quando su Netlify e configurata la variabile `GOOGLE_PLACES_API_KEY`. Seleziona solo i risultati utili prima di importarli nei Lead.</p>
+                      {onlineSearchError && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300 lg:col-span-4">{onlineSearchError}</p>}
+                    </form>
+                    {onlineSearchResults.length > 0 && (
+                      <div className="mb-5 rounded-lg border bg-background p-4">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <h4 className="font-semibold">Risultati online</h4>
+                            <p className="text-sm text-muted-foreground">{onlineSearchResults.length} aziende trovate. Seleziona quelle da importare nei Lead.</p>
+                          </div>
+                          <button disabled={!selectedOnlineLeadIds.length || !canEditCrm} onClick={() => void importSelectedOnlineLeads()} className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"><Upload className="h-3.5 w-3.5" />Importa selezionati</button>
+                        </div>
+                        <div className="grid gap-3 xl:grid-cols-2">
+                          {onlineSearchResults.map((lead) => (
+                            <label key={lead.id} className="flex cursor-pointer gap-3 rounded-lg border bg-card p-3 text-sm transition hover:border-primary">
+                              <input
+                                type="checkbox"
+                                checked={selectedOnlineLeadIds.includes(lead.id)}
+                                onChange={(event) => setSelectedOnlineLeadIds((current) => event.target.checked ? [...current, lead.id] : current.filter((id) => id !== lead.id))}
+                                className="mt-1"
+                              />
+                              <span>
+                                <span className="block font-semibold">{lead.company}</span>
+                                <span className="mt-1 block text-xs text-muted-foreground">{lead.sector || "Settore da qualificare"} · {lead.phone || "telefono non disponibile"}</span>
+                                <span className="mt-1 block text-xs text-muted-foreground">{lead.formattedAddress || clientLocation(lead)}</span>
+                                {lead.website && <span className="mt-1 block text-xs text-primary">{lead.website}</span>}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="space-y-3">
                       {potentialClients.map((client) => (
                         <div key={client.id} className="rounded-lg border bg-background p-4">
