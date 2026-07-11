@@ -13,6 +13,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   ContactRound,
+  Copy,
   Download,
   FileText,
   Filter,
@@ -26,6 +27,7 @@ import {
   Phone,
   PieChart,
   Plus,
+  ReceiptText,
   Search,
   ShieldCheck,
   Sparkles,
@@ -47,6 +49,7 @@ const navItems = [
   { label: "Aziende", icon: Building2 },
   { label: "Contatti", icon: ContactRound },
   { label: "Opportunita", icon: BriefcaseBusiness },
+  { label: "Email/Preventivi", icon: ReceiptText },
   { label: "Potenziali", icon: Target },
   { label: "Clienti", icon: Users },
   { label: "Agenda", icon: CalendarDays },
@@ -136,6 +139,14 @@ function importedValue(value: unknown) {
   return `€ ${new Intl.NumberFormat("it-IT").format(Number.isFinite(numeric) ? numeric : 0)}`;
 }
 
+function clientValueNumber(client: Pick<Client, "value">) {
+  return Number(String(client.value || "0").replace(/[^0-9]/g, "")) || 0;
+}
+
+function moneyValue(value: number) {
+  return `€ ${new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(Math.max(0, Math.round(value)))}`;
+}
+
 function clientLocation(client: Pick<Client, "address" | "houseNumber" | "city">) {
   return [client.address, client.houseNumber, client.city].filter(Boolean).join(", ");
 }
@@ -162,6 +173,81 @@ function isOverdueActivity(activity: ContactActivity) {
   const dueDate = activity.dueDate || activity.reminderAt;
   if (!dueDate || !isOpenActivity(activity)) return false;
   return dueDate < todayValue();
+}
+
+function quoteText(client: Client, discountPercent: number) {
+  const services = client.services.length ? client.services : ["Consulenza marketing"];
+  const total = clientValueNumber(client) || 1000;
+  const lineAmount = total / services.length;
+  const discount = total * (discountPercent / 100);
+  const taxable = total - discount;
+  const vat = taxable * 0.22;
+  const grandTotal = taxable + vat;
+  const serviceLines = services.map((service, index) => `${index + 1}. ${service}: ${moneyValue(lineAmount)}`).join("\n");
+
+  return [
+    `PREVENTIVO - ${client.company}`,
+    `Data: ${todayValue()}`,
+    `Referente: ${client.owner || "Da assegnare"}`,
+    `Email: ${client.email || "Non indicata"}`,
+    `Telefono: ${client.phone || "Non indicato"}`,
+    `Sede: ${clientLocation(client) || "Da completare"}`,
+    "",
+    "Servizi proposti:",
+    serviceLines,
+    "",
+    `Totale servizi: ${moneyValue(total)}`,
+    `Sconto: ${discountPercent}% (${moneyValue(discount)})`,
+    `Imponibile: ${moneyValue(taxable)}`,
+    `IVA 22%: ${moneyValue(vat)}`,
+    `Totale preventivo: ${moneyValue(grandTotal)}`,
+    "",
+    "Note operative:",
+    client.notes || "Obiettivi, tempi e materiali verranno definiti in fase di conferma.",
+    "",
+    "Validita: 15 giorni dalla data del preventivo."
+  ].join("\n");
+}
+
+function emailText(client: Client, tone: "Primo contatto" | "Follow-up" | "Invio preventivo") {
+  const greeting = client.owner ? `Ciao ${client.owner},` : "Buongiorno,";
+  if (tone === "Invio preventivo") {
+    return [
+      `Oggetto: Preventivo per ${client.company}`,
+      "",
+      greeting,
+      "",
+      `ti invio il preventivo per ${client.services.join(", ") || "i servizi marketing richiesti"}.`,
+      `La proposta ha un valore indicativo di ${client.value} e punta a lavorare su visibilita, contatti qualificati e misurazione dei risultati.`,
+      "",
+      "Resto disponibile per rivedere insieme dettagli, tempi e priorita operative.",
+      "",
+      "A presto"
+    ].join("\n");
+  }
+  if (tone === "Follow-up") {
+    return [
+      `Oggetto: Prossimo passo per ${client.company}`,
+      "",
+      greeting,
+      "",
+      "ti scrivo per riprendere il confronto e definire il prossimo passo.",
+      `Possiamo fissare un appuntamento per valutare ${client.services.join(", ") || "le attivita piu adatte"} e trasformare l'interesse in un piano operativo?`,
+      "",
+      "A presto"
+    ].join("\n");
+  }
+  return [
+    `Oggetto: Proposta marketing per ${client.company}`,
+    "",
+    greeting,
+    "",
+    `ho visto che operate nel settore ${client.sector || "da qualificare"} e credo ci sia spazio per lavorare su visibilita locale, acquisizione contatti e comunicazione digitale.`,
+    "",
+    "Mi farebbe piacere fissare una breve call per capire obiettivi e priorita.",
+    "",
+    "A presto"
+  ].join("\n");
 }
 
 function parseDelimitedRows(text: string) {
@@ -304,6 +390,9 @@ export default function Home() {
   const [priorityFilter, setPriorityFilter] = useState<"Tutte" | Client["priority"]>("Tutte");
   const [sectorFilter, setSectorFilter] = useState("Tutti i settori");
   const [agendaStatusFilter, setAgendaStatusFilter] = useState<"Aperte" | "Tutte" | ActivityStatus>("Aperte");
+  const [commercialClientId, setCommercialClientId] = useState("");
+  const [emailTone, setEmailTone] = useState<"Primo contatto" | "Follow-up" | "Invio preventivo">("Invio preventivo");
+  const [quoteDiscount, setQuoteDiscount] = useState(0);
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [clearPotentialsOpen, setClearPotentialsOpen] = useState(false);
@@ -454,6 +543,21 @@ export default function Home() {
   const activityClient = useMemo(
     () => activityEntry ? crmClients.find((client) => client.id === activityEntry.clientId) ?? null : null,
     [activityEntry, crmClients]
+  );
+
+  const commercialClient = useMemo(
+    () => crmClients.find((client) => client.id === commercialClientId) || filteredClients[0] || crmClients[0] || null,
+    [commercialClientId, crmClients, filteredClients]
+  );
+
+  const generatedEmail = useMemo(
+    () => commercialClient ? emailText(commercialClient, emailTone) : "",
+    [commercialClient, emailTone]
+  );
+
+  const generatedQuote = useMemo(
+    () => commercialClient ? quoteText(commercialClient, quoteDiscount) : "",
+    [commercialClient, quoteDiscount]
   );
 
   const totalPipeline = useMemo(() => filteredClients.length, [filteredClients]);
@@ -659,6 +763,47 @@ export default function Home() {
     link.download = "osservatore-crm-report.txt";
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function downloadTextFile(filename: string, content: string) {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyText(content: string) {
+    if (!content) return;
+    await navigator.clipboard.writeText(content);
+  }
+
+  async function recordCommercialAction(clientId: string, kind: "Email" | "Preventivo") {
+    if (!canEditCrm) return;
+    const nextClients = crmClients.map((client) => {
+      if (client.id !== clientId) return client;
+      return {
+        ...client,
+        stage: kind === "Preventivo" ? "Preventivo" as StageName : client.stage,
+        activityLog: [...(client.activityLog || []), {
+          id: crypto.randomUUID(),
+          type: kind === "Email" ? "Email" as const : "Task" as const,
+          at: todayValue(),
+          by: "CRM",
+          notes: kind === "Email" ? `Bozza email preparata: ${emailTone}` : `Preventivo generato e scaricato. Sconto applicato: ${quoteDiscount}%.`,
+          sector: client.sector,
+          assignedTo: client.owner || "Da assegnare",
+          priority: client.priority,
+          outcome: kind === "Preventivo" ? "Preventivo richiesto" as const : "Da definire" as const,
+          status: "Fatta" as const
+        }]
+      };
+    });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    if (!saved) return;
+    setCrmClients(nextClients);
   }
 
   function signOut() {
@@ -1099,11 +1244,85 @@ export default function Home() {
                               <FileText className="h-3.5 w-3.5" />
                               Apri opportunità
                             </button>
+                            <button onClick={() => { setCommercialClientId(client.id); setActiveModule("Email/Preventivi"); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                              <ReceiptText className="h-3.5 w-3.5" />
+                              Email/preventivo
+                            </button>
                           </div>
                         </div>
                       ))}
                       {!filteredClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna opportunità per i filtri selezionati.</p>}
                     </div>
+                  </div>
+                )}
+
+                {activeModule === "Email/Preventivi" && (
+                  <div>
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold">Email e preventivi</h3>
+                        <p className="text-sm text-muted-foreground">Prepara comunicazioni commerciali e preventivi collegati alla cronologia cliente.</p>
+                      </div>
+                      <select aria-label="Seleziona cliente per email e preventivo" value={commercialClient?.id || ""} onChange={(event) => setCommercialClientId(event.target.value)} className="h-10 max-w-72 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
+                        {crmClients.map((client) => <option key={client.id} value={client.id}>{client.company}</option>)}
+                      </select>
+                    </div>
+
+                    {commercialClient ? (
+                      <div className="grid gap-5 xl:grid-cols-2">
+                        <div className="rounded-lg border bg-background p-4">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold">Bozza email</h4>
+                              <p className="text-sm text-muted-foreground">{commercialClient.owner || "Referente da assegnare"} · {commercialClient.email || "email mancante"}</p>
+                            </div>
+                            <select aria-label="Tipo email" value={emailTone} onChange={(event) => setEmailTone(event.target.value as typeof emailTone)} className="h-9 rounded-lg border bg-card px-3 text-sm">
+                              <option>Primo contatto</option>
+                              <option>Follow-up</option>
+                              <option>Invio preventivo</option>
+                            </select>
+                          </div>
+                          <pre className="min-h-72 whitespace-pre-wrap rounded-lg border bg-card p-4 text-sm leading-6 text-muted-foreground">{generatedEmail}</pre>
+                          <div className="mt-4 flex flex-wrap justify-end gap-2">
+                            <button type="button" onClick={() => void copyText(generatedEmail)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                              <Copy className="h-3.5 w-3.5" />
+                              Copia email
+                            </button>
+                            <button disabled={!canEditCrm} type="button" onClick={() => void recordCommercialAction(commercialClient.id, "Email")} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                              <Mail className="h-3.5 w-3.5" />
+                              Registra invio
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border bg-background p-4">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold">Preventivo</h4>
+                              <p className="text-sm text-muted-foreground">{commercialClient.services.join(", ") || "Servizi da definire"} · {commercialClient.value}</p>
+                            </div>
+                            <Field label="Sconto %"><input value={quoteDiscount} onChange={(event) => setQuoteDiscount(Math.min(100, Math.max(0, Number(event.target.value) || 0)))} type="number" min="0" max="100" className="h-9 w-24 rounded-lg border bg-card px-3 text-sm outline-none transition focus:border-primary" /></Field>
+                          </div>
+                          <pre className="min-h-72 whitespace-pre-wrap rounded-lg border bg-card p-4 text-sm leading-6 text-muted-foreground">{generatedQuote}</pre>
+                          <div className="mt-4 flex flex-wrap justify-end gap-2">
+                            <button type="button" onClick={() => void copyText(generatedQuote)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                              <Copy className="h-3.5 w-3.5" />
+                              Copia preventivo
+                            </button>
+                            <button type="button" onClick={() => downloadTextFile(`preventivo-${normalizedText(commercialClient.company).replace(/\s+/g, "-") || "cliente"}.txt`, generatedQuote)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                              <Download className="h-3.5 w-3.5" />
+                              Scarica TXT
+                            </button>
+                            <button disabled={!canEditCrm} type="button" onClick={() => void recordCommercialAction(commercialClient.id, "Preventivo")} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                              <ReceiptText className="h-3.5 w-3.5" />
+                              Registra preventivo
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Aggiungi o importa un cliente per generare email e preventivi.</p>
+                    )}
                   </div>
                 )}
 
