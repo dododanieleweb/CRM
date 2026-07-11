@@ -19,6 +19,7 @@ import {
   Filter,
   Globe2,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Mail,
   Megaphone,
@@ -53,6 +54,7 @@ const navItems = [
   { label: "Pipeline", icon: Workflow },
   { label: "Agenda", icon: CalendarDays },
   { label: "Email/Preventivi", icon: ReceiptText },
+  { label: "Listino", icon: ListChecks },
   { label: "Clienti", icon: Users },
   { label: "Pubblicita", icon: Megaphone },
   { label: "Social", icon: CalendarDays },
@@ -102,10 +104,26 @@ type Client = {
   notes: string;
 };
 
+type PriceItem = {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  billing: "Una tantum" | "Mensile" | "Annuale";
+  active: boolean;
+};
+
 const stageNames: StageName[] = ["Lead", "Contattato", "Telefonata", "Appuntamento", "Preventivo", "Trattativa", "Contratto"];
 const clientStages: StageName[] = ["Appuntamento", "Preventivo", "Trattativa", "Contratto"];
 const activityStatuses: ActivityStatus[] = ["Programmata", "Da fare", "Fatta", "Rimandata", "Annullata"];
 const activityOutcomes: ActivityOutcome[] = ["Da definire", "Non risponde", "Interessato", "Appuntamento fissato", "Preventivo richiesto", "Non interessato"];
+const defaultPriceItems: PriceItem[] = [
+  { id: "price-seo-local", name: "SEO locale", category: "SEO", price: 450, billing: "Mensile", active: true },
+  { id: "price-meta-ads", name: "Gestione Meta Ads", category: "Advertising", price: 390, billing: "Mensile", active: true },
+  { id: "price-google-ads", name: "Gestione Google Ads", category: "Advertising", price: 490, billing: "Mensile", active: true },
+  { id: "price-sito-landing", name: "Landing page", category: "Web", price: 900, billing: "Una tantum", active: true },
+  { id: "price-articolo", name: "Articolo sponsorizzato", category: "Pubblicita", price: 250, billing: "Una tantum", active: true }
+];
 
 const headerAliases: Record<keyof Omit<Client, "id" | "services" | "activityLog">, string[]> = {
   company: ["azienda", "ragione sociale", "societa", "company", "cliente", "nome azienda", "nome"],
@@ -175,15 +193,24 @@ function isOverdueActivity(activity: ContactActivity) {
   return dueDate < todayValue();
 }
 
-function quoteText(client: Client, discountPercent: number) {
+function quoteLineItems(client: Client, priceItems: PriceItem[]) {
+  const requestedServices = client.services.map(normalizedText);
+  const matchedItems = priceItems.filter((item) => item.active && requestedServices.includes(normalizedText(item.name)));
+  if (matchedItems.length) return matchedItems.map((item) => ({ label: `${item.name} (${item.billing})`, amount: item.price }));
   const services = client.services.length ? client.services : ["Consulenza marketing"];
   const total = clientValueNumber(client) || 1000;
   const lineAmount = total / services.length;
+  return services.map((service) => ({ label: service, amount: lineAmount }));
+}
+
+function quoteText(client: Client, discountPercent: number, priceItems: PriceItem[]) {
+  const lineItems = quoteLineItems(client, priceItems);
+  const total = lineItems.reduce((sum, item) => sum + item.amount, 0);
   const discount = total * (discountPercent / 100);
   const taxable = total - discount;
   const vat = taxable * 0.22;
   const grandTotal = taxable + vat;
-  const serviceLines = services.map((service, index) => `${index + 1}. ${service}: ${moneyValue(lineAmount)}`).join("\n");
+  const serviceLines = lineItems.map((item, index) => `${index + 1}. ${item.label}: ${moneyValue(item.amount)}`).join("\n");
 
   return [
     `PREVENTIVO - ${client.company}`,
@@ -327,6 +354,7 @@ type CrmState = {
   crmClients: Client[];
   socialItems: SocialPost[];
   adSlots: AdSlot[];
+  priceItems: PriceItem[];
 };
 
 type TeamRole = "admin" | "commerciale" | "account" | "marketing";
@@ -403,6 +431,7 @@ export default function Home() {
   const [crmClients, setCrmClients] = useState<Client[]>([]);
   const [socialItems, setSocialItems] = useState<SocialPost[]>([]);
   const [adSlots, setAdSlots] = useState<AdSlot[]>([]);
+  const [priceItems, setPriceItems] = useState<PriceItem[]>(defaultPriceItems);
   const [aiResult, setAiResult] = useState("Scegli un'azione AI per generare una bozza operativa collegata ai dati CRM.");
   const [draggingClientId, setDraggingClientId] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<Client[]>([]);
@@ -427,6 +456,7 @@ export default function Home() {
         if (saved.crmClients) setCrmClients(saved.crmClients);
         if (saved.socialItems) setSocialItems(saved.socialItems);
         if (saved.adSlots) setAdSlots(saved.adSlots);
+        if (saved.priceItems) setPriceItems(saved.priceItems);
       } catch {
         setSaveError("Non riesco a raggiungere l'archivio CRM.");
       } finally {
@@ -451,8 +481,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!storageReady) return;
-    void persistCrmState({ darkMode, crmClients, socialItems, adSlots });
-  }, [darkMode, crmClients, socialItems, adSlots, storageReady]);
+    void persistCrmState({ darkMode, crmClients, socialItems, adSlots, priceItems });
+  }, [darkMode, crmClients, socialItems, adSlots, priceItems, storageReady]);
 
   async function persistCrmState(state: CrmState) {
     try {
@@ -556,8 +586,8 @@ export default function Home() {
   );
 
   const generatedQuote = useMemo(
-    () => commercialClient ? quoteText(commercialClient, quoteDiscount) : "",
-    [commercialClient, quoteDiscount]
+    () => commercialClient ? quoteText(commercialClient, quoteDiscount, priceItems) : "",
+    [commercialClient, priceItems, quoteDiscount]
   );
 
   const totalPipeline = useMemo(() => filteredClients.length, [filteredClients]);
@@ -605,7 +635,7 @@ export default function Home() {
     };
 
     const nextClients = [newClient, ...crmClients];
-    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
     if (!saved) return;
 
     setCrmClients(nextClients);
@@ -643,7 +673,7 @@ export default function Home() {
       notes: String(form.get("notes") || "")
     };
     const nextClients = crmClients.map((client) => client.id === updatedClient.id ? updatedClient : client);
-    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
     if (!saved) return;
 
     setCrmClients(nextClients);
@@ -653,7 +683,7 @@ export default function Home() {
   async function clearAllPotentials() {
     if (!canEditCrm) return;
     const nextClients = crmClients.filter((client) => clientStages.includes(client.stage));
-    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
     if (!saved) return;
     setCrmClients(nextClients);
     setSelectedClientId(null);
@@ -696,7 +726,7 @@ export default function Home() {
         }]
       };
     });
-    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
     if (!saved) return;
     setCrmClients(nextClients);
     setActivityEntry(null);
@@ -708,7 +738,7 @@ export default function Home() {
       ? { ...client, activityLog: (client.activityLog || []).map((activity) => activity.id === activityId ? { ...activity, status } : activity) }
       : client
     );
-    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
     if (!saved) return;
     setCrmClients(nextClients);
   }
@@ -719,7 +749,7 @@ export default function Home() {
       ? { ...client, stage: "Appuntamento" as StageName, activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type: "Appuntamento" as const, at: todayValue(), by: "Sistema", notes: "Appuntamento confermato", sector: client.sector, priority: client.priority, outcome: "Appuntamento fissato" as const, status: "Programmata" as const, dueDate: client.nextFollowUp || todayValue(), assignedTo: client.owner || "Da assegnare" }] }
       : client
     );
-    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
     if (!saved) return;
     setCrmClients(nextClients);
     setActiveModule("Opportunita");
@@ -801,7 +831,64 @@ export default function Home() {
         }]
       };
     });
-    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
+    if (!saved) return;
+    setCrmClients(nextClients);
+  }
+
+  function addPriceItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canEditCrm) return;
+    const form = new FormData(event.currentTarget);
+    const price = Number(form.get("price") || 0);
+    const newItem: PriceItem = {
+      id: `price-${crypto.randomUUID()}`,
+      name: String(form.get("name") || "").trim(),
+      category: String(form.get("category") || "Generale").trim(),
+      price: Number.isFinite(price) ? Math.max(0, price) : 0,
+      billing: String(form.get("billing") || "Una tantum") as PriceItem["billing"],
+      active: true
+    };
+    if (!newItem.name) return;
+    setPriceItems((current) => [newItem, ...current]);
+    event.currentTarget.reset();
+  }
+
+  function updatePriceItem(itemId: string, patch: Partial<PriceItem>) {
+    if (!canEditCrm) return;
+    setPriceItems((current) => current.map((item) => item.id === itemId ? { ...item, ...patch } : item));
+  }
+
+  function deletePriceItem(itemId: string) {
+    if (!canEditCrm) return;
+    setPriceItems((current) => current.filter((item) => item.id !== itemId));
+  }
+
+  async function alignOpportunityToPriceList(clientId: string) {
+    if (!canEditCrm) return;
+    const nextClients = crmClients.map((client) => {
+      if (client.id !== clientId) return client;
+      const lineItems = quoteLineItems(client, priceItems);
+      const total = lineItems.reduce((sum, item) => sum + item.amount, 0);
+      return {
+        ...client,
+        value: moneyValue(total),
+        services: lineItems.map((item) => item.label.replace(/\s+\((Una tantum|Mensile|Annuale)\)$/i, "")),
+        activityLog: [...(client.activityLog || []), {
+          id: crypto.randomUUID(),
+          type: "Task" as const,
+          at: todayValue(),
+          by: "CRM",
+          notes: `Opportunita allineata al listino aziendale: ${moneyValue(total)}.`,
+          sector: client.sector,
+          assignedTo: client.owner || "Da assegnare",
+          priority: client.priority,
+          outcome: "Da definire" as const,
+          status: "Fatta" as const
+        }]
+      };
+    });
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots, priceItems });
     if (!saved) return;
     setCrmClients(nextClients);
   }
@@ -1303,8 +1390,16 @@ export default function Home() {
                             </div>
                             <Field label="Sconto %"><input value={quoteDiscount} onChange={(event) => setQuoteDiscount(Math.min(100, Math.max(0, Number(event.target.value) || 0)))} type="number" min="0" max="100" className="h-9 w-24 rounded-lg border bg-card px-3 text-sm outline-none transition focus:border-primary" /></Field>
                           </div>
+                          <div className="mb-3 rounded-lg border bg-card p-3 text-xs text-muted-foreground">
+                            <p className="font-semibold text-foreground">Coerenza listino</p>
+                            <p className="mt-1">Il preventivo usa i prezzi del listino quando i servizi dell'opportunita hanno lo stesso nome del listino attivo.</p>
+                          </div>
                           <pre className="min-h-72 whitespace-pre-wrap rounded-lg border bg-card p-4 text-sm leading-6 text-muted-foreground">{generatedQuote}</pre>
                           <div className="mt-4 flex flex-wrap justify-end gap-2">
+                            <button disabled={!canEditCrm} type="button" onClick={() => void alignOpportunityToPriceList(commercialClient.id)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">
+                              <ListChecks className="h-3.5 w-3.5" />
+                              Allinea al listino
+                            </button>
                             <button type="button" onClick={() => void copyText(generatedQuote)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
                               <Copy className="h-3.5 w-3.5" />
                               Copia preventivo
@@ -1323,6 +1418,49 @@ export default function Home() {
                     ) : (
                       <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Converti prima un lead in opportunita per generare email e preventivi.</p>
                     )}
+                  </div>
+                )}
+
+                {activeModule === "Listino" && (
+                  <div>
+                    <div className="mb-5">
+                      <h3 className="text-lg font-semibold">Listino prezzi</h3>
+                      <p className="text-sm text-muted-foreground">Definisci servizi, prezzi ufficiali e periodicita usati nei preventivi del team.</p>
+                    </div>
+                    <form onSubmit={addPriceItem} className="mb-5 grid gap-3 rounded-lg border bg-background p-4 md:grid-cols-[1.2fr_1fr_0.7fr_0.8fr_auto]">
+                      <Field label="Servizio"><input required name="name" className={inputClass} placeholder="Es. Gestione LinkedIn Ads" /></Field>
+                      <Field label="Categoria"><input name="category" className={inputClass} placeholder="Advertising" /></Field>
+                      <Field label="Prezzo"><input required name="price" type="number" min="0" className={inputClass} placeholder="500" /></Field>
+                      <Field label="Periodicita"><select name="billing" defaultValue="Mensile" className={inputClass}><option>Una tantum</option><option>Mensile</option><option>Annuale</option></select></Field>
+                      <div className="flex items-end"><button disabled={!canEditCrm} className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">Aggiungi</button></div>
+                    </form>
+                    <div className="overflow-auto rounded-lg border">
+                      <table className="w-full min-w-[900px] text-left text-sm">
+                        <thead className="bg-muted text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 font-medium">Attivo</th>
+                            <th className="px-3 py-2 font-medium">Servizio</th>
+                            <th className="px-3 py-2 font-medium">Categoria</th>
+                            <th className="px-3 py-2 font-medium">Prezzo</th>
+                            <th className="px-3 py-2 font-medium">Periodicita</th>
+                            <th className="px-3 py-2 font-medium">Azioni</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {priceItems.map((item) => (
+                            <tr key={item.id} className="border-t">
+                              <td className="px-3 py-2"><input type="checkbox" checked={item.active} onChange={(event) => updatePriceItem(item.id, { active: event.target.checked })} disabled={!canEditCrm} /></td>
+                              <td className="px-3 py-2"><input value={item.name} onChange={(event) => updatePriceItem(item.id, { name: event.target.value })} disabled={!canEditCrm} className="h-9 w-full rounded-lg border bg-card px-3 outline-none focus:border-primary disabled:opacity-60" /></td>
+                              <td className="px-3 py-2"><input value={item.category} onChange={(event) => updatePriceItem(item.id, { category: event.target.value })} disabled={!canEditCrm} className="h-9 w-full rounded-lg border bg-card px-3 outline-none focus:border-primary disabled:opacity-60" /></td>
+                              <td className="px-3 py-2"><input value={item.price} onChange={(event) => updatePriceItem(item.id, { price: Math.max(0, Number(event.target.value) || 0) })} type="number" min="0" disabled={!canEditCrm} className="h-9 w-28 rounded-lg border bg-card px-3 outline-none focus:border-primary disabled:opacity-60" /></td>
+                              <td className="px-3 py-2"><select value={item.billing} onChange={(event) => updatePriceItem(item.id, { billing: event.target.value as PriceItem["billing"] })} disabled={!canEditCrm} className="h-9 rounded-lg border bg-card px-3 outline-none focus:border-primary disabled:opacity-60"><option>Una tantum</option><option>Mensile</option><option>Annuale</option></select></td>
+                              <td className="px-3 py-2"><button disabled={!canEditCrm} onClick={() => deletePriceItem(item.id)} className="grid h-9 w-9 place-items-center rounded-lg border text-muted-foreground transition hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40" title="Elimina voce listino"><Trash2 className="h-4 w-4" /></button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {!priceItems.length && <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna voce di listino presente.</p>}
                   </div>
                 )}
 
