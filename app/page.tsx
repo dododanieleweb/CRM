@@ -546,8 +546,8 @@ export default function Home() {
   );
 
   const commercialClient = useMemo(
-    () => crmClients.find((client) => client.id === commercialClientId) || filteredClients[0] || crmClients[0] || null,
-    [commercialClientId, crmClients, filteredClients]
+    () => actualClients.find((client) => client.id === commercialClientId) || actualClients[0] || null,
+    [actualClients, commercialClientId]
   );
 
   const generatedEmail = useMemo(
@@ -722,7 +722,7 @@ export default function Home() {
     const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
     if (!saved) return;
     setCrmClients(nextClients);
-    setActiveModule("Clienti");
+    setActiveModule("Opportunita");
   }
 
   function runAi(action: string) {
@@ -1116,21 +1116,21 @@ export default function Home() {
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h3 className="text-lg font-semibold">Aziende</h3>
-                        <p className="text-sm text-muted-foreground">{filteredClients.length} aziende con anagrafica, settore, indirizzo e storico collegato.</p>
+                        <p className="text-sm text-muted-foreground">{actualClients.length} aziende create da lead convertiti.</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <select aria-label="Filtra aziende per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
                           <option>Tutti i settori</option>
                           {sectors.map((sector) => <option key={sector}>{sector}</option>)}
                         </select>
-                        <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                        <button disabled={!canEditCrm} onClick={() => { setActiveModule("Lead"); setLeadModalOpen(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
                           <Plus className="h-4 w-4" />
-                          Nuova azienda
+                          Nuovo lead
                         </button>
                       </div>
                     </div>
                     <div className="grid gap-3 xl:grid-cols-2">
-                      {filteredClients.map((client) => (
+                      {actualClients.map((client) => (
                         <div key={client.id} className="rounded-lg border bg-background p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
@@ -1153,7 +1153,7 @@ export default function Home() {
                           </div>
                         </div>
                       ))}
-                      {!filteredClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground xl:col-span-2">Nessuna azienda per i filtri selezionati.</p>}
+                      {!actualClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground xl:col-span-2">Nessuna azienda: converti prima un lead in appuntamento/opportunita.</p>}
                     </div>
                   </div>
                 )}
@@ -1163,11 +1163,11 @@ export default function Home() {
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h3 className="text-lg font-semibold">Contatti</h3>
-                        <p className="text-sm text-muted-foreground">{filteredClients.length} referenti collegati alle aziende e alle opportunita.</p>
+                        <p className="text-sm text-muted-foreground">{actualClients.length} referenti collegati ad aziende convertite.</p>
                       </div>
-                      <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                      <button disabled={!canEditCrm} onClick={() => { setActiveModule("Lead"); setLeadModalOpen(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
                         <Plus className="h-4 w-4" />
-                        Nuovo contatto
+                        Nuovo lead
                       </button>
                     </div>
                     <div className="overflow-auto rounded-lg border">
@@ -1183,7 +1183,7 @@ export default function Home() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredClients.map((client) => (
+                          {actualClients.map((client) => (
                             <tr key={client.id} className="border-t">
                               <td className="px-3 py-2 font-medium">{client.owner || "Da assegnare"}</td>
                               <td className="px-3 py-2">{client.company}</td>
@@ -1201,7 +1201,7 @@ export default function Home() {
                         </tbody>
                       </table>
                     </div>
-                    {!filteredClients.length && <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun contatto per i filtri selezionati.</p>}
+                    {!actualClients.length && <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun contatto: converti prima un lead.</p>}
                   </div>
                 )}
 
@@ -1210,21 +1210,21 @@ export default function Home() {
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h3 className="text-lg font-semibold">Opportunità</h3>
-                        <p className="text-sm text-muted-foreground">{filteredClients.length} trattative con valore, probabilita, servizi e stato pipeline.</p>
+                        <p className="text-sm text-muted-foreground">{actualClients.length} trattative reali create da lead convertiti.</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <select aria-label="Filtra opportunita per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
                           <option>Tutti i settori</option>
                           {sectors.map((sector) => <option key={sector}>{sector}</option>)}
                         </select>
-                        <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                        <button disabled={!canEditCrm} onClick={() => { setActiveModule("Lead"); setLeadModalOpen(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
                           <Plus className="h-4 w-4" />
-                          Nuova opportunità
+                          Nuovo lead
                         </button>
                       </div>
                     </div>
                     <div className="space-y-3">
-                      {filteredClients.map((client) => (
+                      {actualClients.map((client) => (
                         <div key={client.id} className="rounded-lg border bg-background p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
@@ -1251,7 +1251,7 @@ export default function Home() {
                           </div>
                         </div>
                       ))}
-                      {!filteredClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna opportunità per i filtri selezionati.</p>}
+                      {!actualClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna opportunità: converti prima un lead interessato.</p>}
                     </div>
                   </div>
                 )}
@@ -1264,7 +1264,7 @@ export default function Home() {
                         <p className="text-sm text-muted-foreground">Prepara comunicazioni commerciali e preventivi collegati alla cronologia cliente.</p>
                       </div>
                       <select aria-label="Seleziona cliente per email e preventivo" value={commercialClient?.id || ""} onChange={(event) => setCommercialClientId(event.target.value)} className="h-10 max-w-72 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
-                        {crmClients.map((client) => <option key={client.id} value={client.id}>{client.company}</option>)}
+                        {actualClients.map((client) => <option key={client.id} value={client.id}>{client.company}</option>)}
                       </select>
                     </div>
 
@@ -1321,7 +1321,7 @@ export default function Home() {
                         </div>
                       </div>
                     ) : (
-                      <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Aggiungi o importa un cliente per generare email e preventivi.</p>
+                      <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Converti prima un lead in opportunita per generare email e preventivi.</p>
                     )}
                   </div>
                 )}
@@ -1370,7 +1370,7 @@ export default function Home() {
                             <button onClick={() => setActivityEntry({ clientId: client.id, type: "Visita" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button>
                             <button onClick={() => promotePotentialClient(client.id)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground">
                               <CheckCircle2 className="h-3.5 w-3.5" />
-                              Conferma appuntamento
+                              Converti lead
                             </button>
                             <button onClick={() => setSelectedClientId(client.id)} className="grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-primary" title="Apri scheda"><FileText className="h-4 w-4" /></button>
                           </div>
