@@ -925,7 +925,7 @@ export default function Home() {
   return (
     <main className={cn("min-h-screen", darkMode && "dark")}>
       <div className="flex min-h-screen bg-background text-foreground">
-        <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r bg-card/80 px-4 py-5 backdrop-blur lg:block">
+        <aside className="sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r bg-card/80 px-4 py-5 backdrop-blur lg:block">
           <div className="mb-8 flex items-center gap-3 px-2">
             <div className="grid h-11 w-11 place-items-center rounded-lg bg-primary text-primary-foreground">
               <Sparkles className="h-5 w-5" />
@@ -935,7 +935,7 @@ export default function Home() {
               <h1 className="text-xl font-semibold">CRM</h1>
             </div>
           </div>
-          <nav className="space-y-1">
+          <nav className="space-y-1 pb-4">
             {navItems.map((item) => (
               <button
                 key={item.label}
@@ -952,7 +952,7 @@ export default function Home() {
               </button>
             ))}
           </nav>
-          <div className="mt-8 rounded-lg border bg-muted/45 p-4">
+          <div className="mt-6 rounded-lg border bg-muted/45 p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <ShieldCheck className="h-4 w-4 text-primary" />
               Enterprise ready
@@ -968,7 +968,7 @@ export default function Home() {
             <motion.aside
               initial={{ x: -288 }}
               animate={{ x: 0 }}
-              className="h-full w-72 border-r bg-card p-4"
+              className="h-full w-72 overflow-y-auto border-r bg-card p-4"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="mb-6 flex items-center justify-between">
@@ -985,7 +985,7 @@ export default function Home() {
                   <X className="h-4 w-4" />
                 </IconButton>
               </div>
-              <nav className="space-y-1">
+              <nav className="space-y-1 pb-6">
                 {navItems.map((item) => (
                   <button
                     key={item.label}
