@@ -6,10 +6,13 @@ import {
   BarChart3,
   Bell,
   Bot,
+  BriefcaseBusiness,
+  Building2,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
+  ContactRound,
   Download,
   FileText,
   Filter,
@@ -41,6 +44,9 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
+  { label: "Aziende", icon: Building2 },
+  { label: "Contatti", icon: ContactRound },
+  { label: "Opportunita", icon: BriefcaseBusiness },
   { label: "Potenziali", icon: Target },
   { label: "Clienti", icon: Users },
   { label: "Agenda", icon: CalendarDays },
@@ -960,6 +966,147 @@ export default function Home() {
                     </div> : !teamError && <p className="text-sm text-muted-foreground">Caricamento team...</p>}
                   </div>
                 )}
+                {activeModule === "Aziende" && (
+                  <div>
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold">Aziende</h3>
+                        <p className="text-sm text-muted-foreground">{filteredClients.length} aziende con anagrafica, settore, indirizzo e storico collegato.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select aria-label="Filtra aziende per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
+                          <option>Tutti i settori</option>
+                          {sectors.map((sector) => <option key={sector}>{sector}</option>)}
+                        </select>
+                        <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                          <Plus className="h-4 w-4" />
+                          Nuova azienda
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 xl:grid-cols-2">
+                      {filteredClients.map((client) => (
+                        <div key={client.id} className="rounded-lg border bg-background p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold">{client.company}</h4>
+                              <p className="mt-1 text-sm text-muted-foreground">{client.sector || "Settore da qualificare"}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{clientLocation(client) || "Indirizzo da aggiungere"}</p>
+                            </div>
+                            <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{client.stage}</span>
+                          </div>
+                          <div className="mt-4 grid gap-2 text-sm text-muted-foreground md:grid-cols-3">
+                            <span>Contatto: {client.owner || "Da assegnare"}</span>
+                            <span>Attivita: {(client.activityLog || []).length}</span>
+                            <span>Opportunita: {client.value}</span>
+                          </div>
+                          <div className="mt-4 flex justify-end">
+                            <button onClick={() => setSelectedClientId(client.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                              <FileText className="h-3.5 w-3.5" />
+                              Apri azienda
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {!filteredClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground xl:col-span-2">Nessuna azienda per i filtri selezionati.</p>}
+                    </div>
+                  </div>
+                )}
+
+                {activeModule === "Contatti" && (
+                  <div>
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold">Contatti</h3>
+                        <p className="text-sm text-muted-foreground">{filteredClients.length} referenti collegati alle aziende e alle opportunita.</p>
+                      </div>
+                      <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                        <Plus className="h-4 w-4" />
+                        Nuovo contatto
+                      </button>
+                    </div>
+                    <div className="overflow-auto rounded-lg border">
+                      <table className="w-full min-w-[820px] text-left text-sm">
+                        <thead className="bg-muted text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 font-medium">Referente</th>
+                            <th className="px-3 py-2 font-medium">Azienda</th>
+                            <th className="px-3 py-2 font-medium">Email</th>
+                            <th className="px-3 py-2 font-medium">Telefono</th>
+                            <th className="px-3 py-2 font-medium">Settore</th>
+                            <th className="px-3 py-2 font-medium">Azioni</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredClients.map((client) => (
+                            <tr key={client.id} className="border-t">
+                              <td className="px-3 py-2 font-medium">{client.owner || "Da assegnare"}</td>
+                              <td className="px-3 py-2">{client.company}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{client.email || "-"}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{client.phone || "-"}</td>
+                              <td className="px-3 py-2">{client.sector || "Da qualificare"}</td>
+                              <td className="px-3 py-2">
+                                <button onClick={() => setSelectedClientId(client.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                                  <FileText className="h-3.5 w-3.5" />
+                                  Scheda
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {!filteredClients.length && <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun contatto per i filtri selezionati.</p>}
+                  </div>
+                )}
+
+                {activeModule === "Opportunita" && (
+                  <div>
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold">Opportunità</h3>
+                        <p className="text-sm text-muted-foreground">{filteredClients.length} trattative con valore, probabilita, servizi e stato pipeline.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select aria-label="Filtra opportunita per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
+                          <option>Tutti i settori</option>
+                          {sectors.map((sector) => <option key={sector}>{sector}</option>)}
+                        </select>
+                        <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                          <Plus className="h-4 w-4" />
+                          Nuova opportunità
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {filteredClients.map((client) => (
+                        <div key={client.id} className="rounded-lg border bg-background p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h4 className="font-semibold">{client.company}</h4>
+                              <p className="mt-1 text-sm text-muted-foreground">{client.services.join(", ") || "Servizi da definire"}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{client.owner || "Referente da assegnare"} · {client.nextFollowUp || "Follow-up non impostato"}</p>
+                            </div>
+                            <div className="text-left md:text-right">
+                              <p className="font-semibold">{client.value}</p>
+                              <p className="text-sm text-muted-foreground">{client.probability}% · {client.priority}</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{client.stage}</span>
+                            <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{client.sector || "Da qualificare"}</span>
+                            <button onClick={() => setSelectedClientId(client.id)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                              <FileText className="h-3.5 w-3.5" />
+                              Apri opportunità
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {!filteredClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna opportunità per i filtri selezionati.</p>}
+                    </div>
+                  </div>
+                )}
+
                 {activeModule === "Potenziali" && (
                   <div>
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -1633,20 +1780,15 @@ export default function Home() {
               </div> : <p className="text-sm text-muted-foreground">Nessuna attivita registrata.</p>}
             </div>
             <form key={selectedClient.id} onSubmit={saveClientDetails} className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <p className="text-sm font-semibold">Azienda</p>
+                <p className="text-xs text-muted-foreground">Dati anagrafici e sede operativa.</p>
+              </div>
               <Field label="Ragione sociale">
                 <input required name="company" className={inputClass} defaultValue={selectedClient.company} />
               </Field>
               <Field label="Settore">
                 <input name="sector" className={inputClass} defaultValue={selectedClient.sector} />
-              </Field>
-              <Field label="Referente">
-                <input name="owner" className={inputClass} defaultValue={selectedClient.owner} />
-              </Field>
-              <Field label="Email">
-                <input name="email" type="email" className={inputClass} defaultValue={selectedClient.email} />
-              </Field>
-              <Field label="Telefono">
-                <input name="phone" className={inputClass} defaultValue={selectedClient.phone} />
               </Field>
               <Field label="Indirizzo">
                 <input name="address" className={inputClass} defaultValue={selectedClient.address || ""} placeholder="Via o piazza" />
@@ -1657,6 +1799,24 @@ export default function Home() {
               <Field label="Citta">
                 <input name="city" className={inputClass} defaultValue={selectedClient.city || ""} placeholder="Es. Livorno" />
               </Field>
+              <div className="hidden md:block" />
+              <div className="border-t pt-4 md:col-span-2">
+                <p className="text-sm font-semibold">Contatto</p>
+                <p className="text-xs text-muted-foreground">Referente principale collegato all'azienda.</p>
+              </div>
+              <Field label="Referente">
+                <input name="owner" className={inputClass} defaultValue={selectedClient.owner} />
+              </Field>
+              <Field label="Email">
+                <input name="email" type="email" className={inputClass} defaultValue={selectedClient.email} />
+              </Field>
+              <Field label="Telefono">
+                <input name="phone" className={inputClass} defaultValue={selectedClient.phone} />
+              </Field>
+              <div className="border-t pt-4 md:col-span-2">
+                <p className="text-sm font-semibold">Opportunità</p>
+                <p className="text-xs text-muted-foreground">Valore, probabilita, stato pipeline e servizi proposti.</p>
+              </div>
               <Field label="Valore opportunita">
                 <input name="value" type="number" min="0" className={inputClass} defaultValue={selectedClient.value.replace(/[^0-9]/g, "")} />
               </Field>
