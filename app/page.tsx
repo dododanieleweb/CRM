@@ -28,6 +28,7 @@ import {
   Sparkles,
   Sun,
   Target,
+  Timer,
   Trash2,
   Upload,
   Users,
@@ -42,6 +43,7 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Potenziali", icon: Target },
   { label: "Clienti", icon: Users },
+  { label: "Agenda", icon: CalendarDays },
   { label: "Team", icon: ShieldCheck },
   { label: "Pipeline", icon: Workflow },
   { label: "Pubblicita", icon: Megaphone },
@@ -52,7 +54,24 @@ const navItems = [
 ];
 
 type StageName = "Lead" | "Contattato" | "Telefonata" | "Appuntamento" | "Preventivo" | "Trattativa" | "Contratto";
-type ContactActivity = { id: string; type: "Email" | "Telefonata" | "Visita" | "Appuntamento"; at: string; by: string; notes: string };
+type ActivityType = "Email" | "Telefonata" | "Visita" | "Appuntamento" | "Promemoria" | "Task";
+type ActivityStatus = "Programmata" | "Da fare" | "Fatta" | "Rimandata" | "Annullata";
+type ActivityOutcome = "Da definire" | "Non risponde" | "Interessato" | "Appuntamento fissato" | "Preventivo richiesto" | "Non interessato";
+type ContactActivity = {
+  id: string;
+  type: ActivityType;
+  at: string;
+  by: string;
+  notes: string;
+  sector?: string;
+  dueDate?: string;
+  dueTime?: string;
+  reminderAt?: string;
+  assignedTo?: string;
+  priority?: "Alta" | "Media" | "Bassa";
+  outcome?: ActivityOutcome;
+  status?: ActivityStatus;
+};
 
 type Client = {
   id: string;
@@ -76,6 +95,8 @@ type Client = {
 
 const stageNames: StageName[] = ["Lead", "Contattato", "Telefonata", "Appuntamento", "Preventivo", "Trattativa", "Contratto"];
 const clientStages: StageName[] = ["Appuntamento", "Preventivo", "Trattativa", "Contratto"];
+const activityStatuses: ActivityStatus[] = ["Programmata", "Da fare", "Fatta", "Rimandata", "Annullata"];
+const activityOutcomes: ActivityOutcome[] = ["Da definire", "Non risponde", "Interessato", "Appuntamento fissato", "Preventivo richiesto", "Non interessato"];
 
 const headerAliases: Record<keyof Omit<Client, "id" | "services" | "activityLog">, string[]> = {
   company: ["azienda", "ragione sociale", "societa", "company", "cliente", "nome azienda", "nome"],
@@ -111,6 +132,30 @@ function importedValue(value: unknown) {
 
 function clientLocation(client: Pick<Client, "address" | "houseNumber" | "city">) {
   return [client.address, client.houseNumber, client.city].filter(Boolean).join(", ");
+}
+
+function todayValue() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function activityDateValue(activity: ContactActivity) {
+  return activity.dueDate || activity.at || "";
+}
+
+function activityDateTimeLabel(activity: ContactActivity) {
+  const date = activityDateValue(activity) || "Senza data";
+  return activity.dueTime ? `${date} ${activity.dueTime}` : date;
+}
+
+function isOpenActivity(activity: ContactActivity) {
+  const status = activity.status || (activity.dueDate ? "Programmata" : "Fatta");
+  return status !== "Fatta" && status !== "Annullata";
+}
+
+function isOverdueActivity(activity: ContactActivity) {
+  const dueDate = activity.dueDate || activity.reminderAt;
+  if (!dueDate || !isOpenActivity(activity)) return false;
+  return dueDate < todayValue();
 }
 
 function parseDelimitedRows(text: string) {
@@ -252,6 +297,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"Tutte" | Client["priority"]>("Tutte");
   const [sectorFilter, setSectorFilter] = useState("Tutti i settori");
+  const [agendaStatusFilter, setAgendaStatusFilter] = useState<"Aperte" | "Tutte" | ActivityStatus>("Aperte");
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [clearPotentialsOpen, setClearPotentialsOpen] = useState(false);
@@ -364,6 +410,35 @@ export default function Home() {
       return groups;
     }, {});
   }, [actualClients]);
+
+  const allActivities = useMemo(() => {
+    return filteredClients
+      .flatMap((client) => (client.activityLog || []).map((activity) => ({ activity, client })))
+      .sort((first, second) => {
+        const firstDate = `${activityDateValue(first.activity)} ${first.activity.dueTime || ""}`.trim();
+        const secondDate = `${activityDateValue(second.activity)} ${second.activity.dueTime || ""}`.trim();
+        return firstDate.localeCompare(secondDate);
+      });
+  }, [filteredClients]);
+
+  const agendaActivities = useMemo(() => {
+    return allActivities.filter(({ activity }) => {
+      const status = activity.status || (activity.dueDate ? "Programmata" : "Fatta");
+      if (agendaStatusFilter === "Tutte") return true;
+      if (agendaStatusFilter === "Aperte") return isOpenActivity(activity);
+      return status === agendaStatusFilter;
+    });
+  }, [agendaStatusFilter, allActivities]);
+
+  const overdueActivities = useMemo(
+    () => allActivities.filter(({ activity }) => isOverdueActivity(activity)),
+    [allActivities]
+  );
+
+  const todayActivities = useMemo(
+    () => allActivities.filter(({ activity }) => activityDateValue(activity) === todayValue() && isOpenActivity(activity)),
+    [allActivities]
+  );
 
   const selectedClient = useMemo(
     () => crmClients.find((client) => client.id === selectedClientId) ?? null,
@@ -482,18 +557,32 @@ export default function Home() {
     if (!activityEntry) return;
     const form = new FormData(event.currentTarget);
     const { clientId, type } = activityEntry;
+    const dueDate = String(form.get("dueDate") || "").trim();
+    const dueTime = String(form.get("dueTime") || "").trim();
+    const reminderAt = String(form.get("reminderAt") || "").trim();
+    const outcome = String(form.get("outcome") || "Da definire") as ActivityOutcome;
+    const status = String(form.get("status") || (dueDate ? "Programmata" : "Fatta")) as ActivityStatus;
     const nextClients = crmClients.map((client) => {
       if (client.id !== clientId) return client;
       const stage = type === "Email" ? "Contattato" : type === "Telefonata" ? "Telefonata" : client.stage;
       return {
         ...client,
         stage,
+        nextFollowUp: dueDate || client.nextFollowUp,
         activityLog: [...(client.activityLog || []), {
           id: crypto.randomUUID(),
           type,
-          at: String(form.get("date") || new Date().toISOString().slice(0, 10)),
+          at: String(form.get("date") || todayValue()),
           by: String(form.get("by") || "Non indicato").trim(),
-          notes: String(form.get("notes") || "").trim()
+          notes: String(form.get("notes") || "").trim(),
+          sector: String(form.get("sector") || client.sector || "Da qualificare").trim(),
+          dueDate,
+          dueTime,
+          reminderAt,
+          assignedTo: String(form.get("assignedTo") || form.get("by") || "Da assegnare").trim(),
+          priority: String(form.get("priority") || client.priority || "Media") as Client["priority"],
+          outcome,
+          status
         }]
       };
     });
@@ -503,10 +592,21 @@ export default function Home() {
     setActivityEntry(null);
   }
 
+  async function updateContactActivityStatus(clientId: string, activityId: string, status: ActivityStatus) {
+    if (!canEditCrm) return;
+    const nextClients = crmClients.map((client) => client.id === clientId
+      ? { ...client, activityLog: (client.activityLog || []).map((activity) => activity.id === activityId ? { ...activity, status } : activity) }
+      : client
+    );
+    const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
+    if (!saved) return;
+    setCrmClients(nextClients);
+  }
+
   async function promotePotentialClient(clientId: string) {
     if (!canEditCrm) return;
     const nextClients = crmClients.map((client) => client.id === clientId
-      ? { ...client, stage: "Appuntamento" as StageName, activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type: "Appuntamento" as const, at: new Date().toISOString().slice(0, 10), by: "Sistema", notes: "Appuntamento confermato" }] }
+      ? { ...client, stage: "Appuntamento" as StageName, activityLog: [...(client.activityLog || []), { id: crypto.randomUUID(), type: "Appuntamento" as const, at: todayValue(), by: "Sistema", notes: "Appuntamento confermato", sector: client.sector, priority: client.priority, outcome: "Appuntamento fissato" as const, status: "Programmata" as const, dueDate: client.nextFollowUp || todayValue(), assignedTo: client.owner || "Da assegnare" }] }
       : client
     );
     const saved = await persistCrmState({ darkMode, crmClients: nextClients, socialItems, adSlots });
@@ -793,7 +893,9 @@ export default function Home() {
                   <Card className="absolute right-0 top-12 z-30 w-80 p-4">
                     <h3 className="mb-3 font-semibold">Notifiche</h3>
                     <div className="space-y-3 text-sm text-muted-foreground">
-                      <p>Follow-up aperti: {filteredClients.filter((client) => client.nextFollowUp).length}</p>
+                      <p>Attivita di oggi: {todayActivities.length}</p>
+                      <p>Promemoria scaduti: {overdueActivities.length}</p>
+                      <p>Follow-up aperti: {allActivities.filter(({ activity }) => isOpenActivity(activity)).length}</p>
                       <p>Post in approvazione: {socialItems.filter((post) => post.status === "In approvazione").length}</p>
                       <p>Spazi oltre 80%: {adSlots.filter((ad) => ad.booked >= 80).length}</p>
                     </div>
@@ -978,6 +1080,90 @@ export default function Home() {
                         </section>
                       ))}
                       {!actualClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun cliente acquisito per i filtri selezionati.</p>}
+                    </div>
+                  </div>
+                )}
+
+                {activeModule === "Agenda" && (
+                  <div>
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold">Agenda attività</h3>
+                        <p className="text-sm text-muted-foreground">{agendaActivities.length} attività filtrate, {todayActivities.length} da gestire oggi, {overdueActivities.length} scadute.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select aria-label="Filtra agenda per stato" value={agendaStatusFilter} onChange={(event) => setAgendaStatusFilter(event.target.value as typeof agendaStatusFilter)} className="h-10 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
+                          <option>Aperte</option>
+                          <option>Tutte</option>
+                          {activityStatuses.map((status) => <option key={status}>{status}</option>)}
+                        </select>
+                        <select aria-label="Filtra agenda per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
+                          <option>Tutti i settori</option>
+                          {sectors.map((sector) => <option key={sector}>{sector}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mb-5 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-lg border bg-background p-4">
+                        <p className="text-sm text-muted-foreground">Oggi</p>
+                        <p className="mt-1 text-2xl font-semibold">{todayActivities.length}</p>
+                      </div>
+                      <div className="rounded-lg border bg-background p-4">
+                        <p className="text-sm text-muted-foreground">Scadute</p>
+                        <p className="mt-1 text-2xl font-semibold text-red-600">{overdueActivities.length}</p>
+                      </div>
+                      <div className="rounded-lg border bg-background p-4">
+                        <p className="text-sm text-muted-foreground">Aperte</p>
+                        <p className="mt-1 text-2xl font-semibold">{allActivities.filter(({ activity }) => isOpenActivity(activity)).length}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {agendaActivities.map(({ activity, client }) => {
+                        const status = activity.status || (activity.dueDate ? "Programmata" : "Fatta");
+                        const overdue = isOverdueActivity(activity);
+                        const today = activityDateValue(activity) === todayValue();
+                        return (
+                          <div key={`${client.id}-${activity.id}`} className={cn("rounded-lg border bg-background p-4", overdue && "border-red-500/40 bg-red-500/5", today && !overdue && "border-primary/40")}>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-semibold">{activity.type}</span>
+                                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{status}</span>
+                                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{activity.priority || client.priority}</span>
+                                  {overdue && <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-600">Scaduta</span>}
+                                  {today && !overdue && <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">Oggi</span>}
+                                </div>
+                                <button onClick={() => setSelectedClientId(client.id)} className="mt-2 text-left text-sm font-semibold transition hover:text-primary">{client.company}</button>
+                                <p className="mt-1 text-xs text-muted-foreground">{client.sector} · {client.owner || "Referente da assegnare"} · {client.phone || "Telefono mancante"}</p>
+                                {activity.notes && <p className="mt-2 text-sm text-muted-foreground">{activity.notes}</p>}
+                              </div>
+                              <div className="text-left text-sm md:text-right">
+                                <p className="font-semibold">{activityDateTimeLabel(activity)}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Promemoria: {activity.reminderAt || "Non impostato"}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">A: {activity.assignedTo || activity.by || "Da assegnare"}</p>
+                              </div>
+                            </div>
+                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                              <button disabled={!canEditCrm} onClick={() => void updateContactActivityStatus(client.id, activity.id, "Fatta")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Fatta
+                              </button>
+                              <button disabled={!canEditCrm} onClick={() => void updateContactActivityStatus(client.id, activity.id, "Rimandata")} className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">
+                                <Timer className="h-3.5 w-3.5" />
+                                Rimandata
+                              </button>
+                              <button disabled={!canEditCrm} onClick={() => void updateContactActivityStatus(client.id, activity.id, "Da fare")} className="h-8 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">
+                                Riapri
+                              </button>
+                              <button onClick={() => setSelectedClientId(client.id)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                                <FileText className="h-3.5 w-3.5" />
+                                Scheda
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {!agendaActivities.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessuna attività in agenda per i filtri selezionati.</p>}
                     </div>
                   </div>
                 )}
@@ -1377,11 +1563,19 @@ export default function Home() {
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40 p-4">
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg rounded-lg border bg-card p-5 shadow-soft">
             <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-primary">Registra attivita</p><h2 className="mt-1 text-xl font-semibold">{activityEntry.type} · {activityClient.company}</h2></div><IconButton label="Chiudi registrazione attività" onClick={() => setActivityEntry(null)}><X className="h-4 w-4" /></IconButton></div>
-            <form onSubmit={saveContactActivity} className="grid gap-4">
-              <Field label="Data attività"><input required name="date" type="date" className={inputClass} defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
+            <form onSubmit={saveContactActivity} className="grid gap-4 md:grid-cols-2">
+              <Field label="Data attività"><input required name="date" type="date" className={inputClass} defaultValue={todayValue()} /></Field>
               <Field label="Operatore"><input required name="by" className={inputClass} placeholder="Chi ha svolto l'attivita" /></Field>
-              <label className="grid gap-1.5 text-sm font-medium"><span>Note</span><textarea required name="notes" className="min-h-28 rounded-lg border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary" placeholder="Esito, richiesta del contatto, prossimo passo..." /></label>
-              <div className="flex justify-end gap-3"><button type="button" onClick={() => setActivityEntry(null)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button><button className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">Salva attività</button></div>
+              <Field label="Settore attività"><input name="sector" className={inputClass} defaultValue={activityClient.sector || "Da qualificare"} /></Field>
+              <Field label="Assegnata a"><input name="assignedTo" className={inputClass} defaultValue={activityClient.owner || ""} placeholder="Persona responsabile" /></Field>
+              <Field label="Priorità"><select name="priority" defaultValue={activityClient.priority || "Media"} className={inputClass}><option>Alta</option><option>Media</option><option>Bassa</option></select></Field>
+              <Field label="Esito"><select name="outcome" defaultValue="Da definire" className={inputClass}>{activityOutcomes.map((outcome) => <option key={outcome}>{outcome}</option>)}</select></Field>
+              <Field label="Scadenza agenda"><input name="dueDate" type="date" className={inputClass} defaultValue={activityClient.nextFollowUp || ""} /></Field>
+              <Field label="Ora"><input name="dueTime" type="time" className={inputClass} /></Field>
+              <Field label="Promemoria"><input name="reminderAt" type="date" className={inputClass} /></Field>
+              <Field label="Stato"><select name="status" defaultValue={activityEntry.type === "Appuntamento" ? "Programmata" : "Da fare"} className={inputClass}>{activityStatuses.map((status) => <option key={status}>{status}</option>)}</select></Field>
+              <label className="grid gap-1.5 text-sm font-medium md:col-span-2"><span>Note</span><textarea required name="notes" className="min-h-28 rounded-lg border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary" placeholder="Esito, richiesta del contatto, prossimo passo..." /></label>
+              <div className="flex justify-end gap-3 md:col-span-2"><button type="button" onClick={() => setActivityEntry(null)} className="h-10 rounded-lg border px-4 text-sm font-semibold">Annulla</button><button className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">Salva attività</button></div>
             </form>
           </motion.div>
         </div>
@@ -1433,9 +1627,9 @@ export default function Home() {
               </IconButton>
             </div>
             <div className="mb-5 rounded-lg border bg-background p-4">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Cronologia contatti</p><div className="flex gap-2"><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Email" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Email</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Telefonata" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Telefonata</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Visita" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button></div></div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Cronologia contatti e agenda</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Email" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Email</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Telefonata" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Telefonata</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Visita" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Appuntamento" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Appuntamento</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Promemoria" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Promemoria</button></div></div>
               {(selectedClient.activityLog || []).length > 0 ? <div className="space-y-2">
-                {[...(selectedClient.activityLog || [])].reverse().map((activity) => <div key={activity.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-semibold">{activity.type}</span><span className="text-muted-foreground">{activity.at} · {activity.by || "Non indicato"}</span></div>{activity.notes && <p className="mt-2 text-muted-foreground">{activity.notes}</p>}</div>)}
+                {[...(selectedClient.activityLog || [])].reverse().map((activity) => <div key={activity.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{activity.type}</span><span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{activity.status || (activity.dueDate ? "Programmata" : "Fatta")}</span><span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">{activity.priority || selectedClient.priority}</span></div><span className="text-muted-foreground">{activityDateTimeLabel(activity)} · {activity.by || "Non indicato"}</span></div><div className="mt-2 grid gap-1 text-xs text-muted-foreground md:grid-cols-3"><span>Esito: {activity.outcome || "Da definire"}</span><span>A: {activity.assignedTo || activity.by || "Da assegnare"}</span><span>Promemoria: {activity.reminderAt || "Non impostato"}</span></div>{activity.notes && <p className="mt-2 text-muted-foreground">{activity.notes}</p>}</div>)}
               </div> : <p className="text-sm text-muted-foreground">Nessuna attivita registrata.</p>}
             </div>
             <form key={selectedClient.id} onSubmit={saveClientDetails} className="grid gap-4 md:grid-cols-2">
