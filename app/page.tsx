@@ -50,7 +50,7 @@ const navItems = [
   { label: "Contatti", icon: ContactRound },
   { label: "Opportunita", icon: BriefcaseBusiness },
   { label: "Email/Preventivi", icon: ReceiptText },
-  { label: "Potenziali", icon: Target },
+  { label: "Lead", icon: Target },
   { label: "Clienti", icon: Users },
   { label: "Agenda", icon: CalendarDays },
   { label: "Team", icon: ShieldCheck },
@@ -610,7 +610,7 @@ export default function Home() {
 
     setCrmClients(nextClients);
     setLeadModalOpen(false);
-    setActiveModule("Potenziali");
+    setActiveModule("Lead");
     event.currentTarget.reset();
   }
 
@@ -919,7 +919,7 @@ export default function Home() {
     setImportModalOpen(false);
     setImportPreview([]);
     setImportFileName("");
-    setActiveModule("Potenziali");
+    setActiveModule("Lead");
   }
 
   return (
@@ -1326,29 +1326,29 @@ export default function Home() {
                   </div>
                 )}
 
-                {activeModule === "Potenziali" && (
+                {activeModule === "Lead" && (
                   <div>
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-lg font-semibold">Potenziali clienti</h3>
+                        <h3 className="text-lg font-semibold">Lead</h3>
                         <p className="text-sm text-muted-foreground">{potentialClients.length} contatti da qualificare prima dell'appuntamento.</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <select aria-label="Filtra potenziali per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
+                        <select aria-label="Filtra lead per settore" value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)} className="h-10 max-w-48 rounded-lg border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary">
                           <option>Tutti i settori</option>
                           {sectors.map((sector) => <option key={sector}>{sector}</option>)}
                         </select>
                         <button disabled={!canEditCrm} onClick={() => setImportModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">
                           <Upload className="h-4 w-4" />
-                          Importa potenziali
+                          Importa lead
                         </button>
                         <button disabled={!potentialClients.length || !canEditCrm} onClick={() => setClearPotentialsOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-4 text-sm font-semibold text-red-600 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
                           <Trash2 className="h-4 w-4" />
-                          Svuota potenziali
+                          Svuota lead
                         </button>
                         <button disabled={!canEditCrm} onClick={() => setLeadModalOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
                           <Plus className="h-4 w-4" />
-                          Nuovo potenziale
+                          Nuovo lead
                         </button>
                       </div>
                     </div>
@@ -1377,7 +1377,7 @@ export default function Home() {
                           {(client.activityLog || []).length > 0 && <p className="mt-3 text-xs text-muted-foreground">Ultima attivita: {(client.activityLog || []).at(-1)?.type} · {(client.activityLog || []).at(-1)?.at} · {(client.activityLog || []).at(-1)?.by || "Non indicato"}</p>}
                         </div>
                       ))}
-                      {!potentialClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun potenziale cliente per i filtri selezionati.</p>}
+                      {!potentialClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun lead per i filtri selezionati.</p>}
                     </div>
                   </div>
                 )}
@@ -1399,9 +1399,9 @@ export default function Home() {
                           <option>Tutti i settori</option>
                           {sectors.map((sector) => <option key={sector}>{sector}</option>)}
                         </select>
-                        <button onClick={() => { setActiveModule("Potenziali"); setLeadModalOpen(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
+                        <button onClick={() => { setActiveModule("Lead"); setLeadModalOpen(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">
                           <Plus className="h-4 w-4" />
-                          Nuovo potenziale
+                          Nuovo lead
                         </button>
                       </div>
                     </div>
