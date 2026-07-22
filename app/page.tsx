@@ -18,6 +18,7 @@ import {
   FileText,
   Filter,
   Globe2,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -37,12 +38,14 @@ import {
   Timer,
   Trash2,
   Upload,
+  UserCircle,
   Users,
   Workflow,
   X
 } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import readXlsxFile from "read-excel-file/browser";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -444,6 +447,10 @@ export default function Home() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [crmClients, setCrmClients] = useState<Client[]>([]);
   const [socialItems, setSocialItems] = useState<SocialPost[]>([]);
   const [adSlots, setAdSlots] = useState<AdSlot[]>([]);
@@ -465,6 +472,7 @@ export default function Home() {
   const [memberSaving, setMemberSaving] = useState(false);
 
   const canEditCrm = teamInfo?.currentRole !== "marketing";
+  const authConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 
   useEffect(() => {
     async function loadCrmState() {
@@ -485,6 +493,20 @@ export default function Home() {
     }
     void loadCrmState();
   }, []);
+
+  useEffect(() => {
+    async function loadCurrentUser() {
+      if (!authConfigured) return;
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { data } = await supabase.auth.getUser();
+        setCurrentUserEmail(data.user?.email || "");
+      } catch {
+        setCurrentUserEmail("");
+      }
+    }
+    void loadCurrentUser();
+  }, [authConfigured]);
 
   async function loadTeam() {
     try {
@@ -917,6 +939,37 @@ export default function Home() {
     void fetch("/auth/signout", { method: "POST" }).finally(() => window.location.assign("/login"));
   }
 
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!authConfigured) return;
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") || "");
+    const confirmPassword = String(form.get("confirmPassword") || "");
+    setPasswordMessage("");
+
+    if (password.length < 8) {
+      setPasswordMessage("La password deve avere almeno 8 caratteri.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPasswordMessage("Le due password non coincidono.");
+      return;
+    }
+
+    setPasswordSaving(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setPasswordMessage("Password aggiornata correttamente.");
+      event.currentTarget.reset();
+    } catch (error) {
+      setPasswordMessage(error instanceof Error ? error.message : "Password non aggiornata.");
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
   async function addTeamMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1222,10 +1275,38 @@ export default function Home() {
               <IconButton label={darkMode ? "Light mode" : "Dark mode"} onClick={() => setDarkMode((value) => !value)}>
                 {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </IconButton>
-              {process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY && (
-                <IconButton label="Esci" onClick={signOut}>
-                  <LogOut className="h-4 w-4" />
-                </IconButton>
+              {authConfigured && (
+                <div className="relative">
+                  <button
+                    onClick={() => setAccountOpen((value) => !value)}
+                    className="inline-flex h-10 max-w-[220px] items-center gap-2 rounded-lg border bg-card px-3 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:text-primary"
+                    title={currentUserEmail || "Account"}
+                  >
+                    <UserCircle className="h-4 w-4 shrink-0" />
+                    <span className="hidden truncate sm:inline">{currentUserEmail || "Account"}</span>
+                    <ChevronDown className="h-4 w-4 shrink-0" />
+                  </button>
+                  {accountOpen && (
+                    <Card className="absolute right-0 top-12 z-30 w-80 p-4">
+                      <div className="mb-4">
+                        <p className="text-xs font-medium uppercase text-muted-foreground">Accesso</p>
+                        <p className="mt-1 truncate text-sm font-semibold">{currentUserEmail || "Utente loggato"}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Ruolo: {teamInfo?.currentRole ? roleLabels[teamInfo.currentRole] : "Caricamento"}</p>
+                      </div>
+                      <form onSubmit={changePassword} className="grid gap-3 border-t pt-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="h-4 w-4 text-primary" />Cambia password</div>
+                        <input required name="password" type="password" minLength={8} autoComplete="new-password" className={inputClass} placeholder="Nuova password" />
+                        <input required name="confirmPassword" type="password" minLength={8} autoComplete="new-password" className={inputClass} placeholder="Ripeti password" />
+                        {passwordMessage && <p className="rounded-lg border bg-muted p-2 text-xs text-muted-foreground">{passwordMessage}</p>}
+                        <button disabled={passwordSaving} className="h-9 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">{passwordSaving ? "Aggiorno..." : "Aggiorna password"}</button>
+                      </form>
+                      <button onClick={signOut} className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold text-muted-foreground transition hover:border-red-500 hover:text-red-600">
+                        <LogOut className="h-3.5 w-3.5" />
+                        Esci
+                      </button>
+                    </Card>
+                  )}
+                </div>
               )}
               <button
                 onClick={() => setLeadModalOpen(true)}
