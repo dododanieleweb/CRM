@@ -192,13 +192,22 @@ function todayValue() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatItalianDate(value?: string) {
+  if (!value) return "";
+  const [datePart, timePart] = value.split(" ");
+  const [year, month, day] = datePart.split("-");
+  if (!year || !month || !day) return value;
+  return timePart ? `${day}/${month}/${year} ${timePart}` : `${day}/${month}/${year}`;
+}
+
 function activityDateValue(activity: ContactActivity) {
   return activity.dueDate || activity.at || "";
 }
 
 function activityDateTimeLabel(activity: ContactActivity) {
-  const date = activityDateValue(activity) || "Senza data";
-  return activity.dueTime ? `${date} ${activity.dueTime}` : date;
+  const date = activityDateValue(activity);
+  if (!date) return "Senza data";
+  return activity.dueTime ? `${formatItalianDate(date)} ${activity.dueTime}` : formatItalianDate(date);
 }
 
 function isOpenActivity(activity: ContactActivity) {
@@ -233,7 +242,7 @@ function quoteText(client: Client, discountPercent: number, priceItems: PriceIte
 
   return [
     `PREVENTIVO - ${client.company}`,
-    `Data: ${todayValue()}`,
+    `Data: ${formatItalianDate(todayValue())}`,
     `Referente: ${client.owner || "Da assegnare"}`,
     `Email: ${client.email || "Non indicata"}`,
     `Telefono: ${client.phone || "Non indicato"}`,
@@ -440,6 +449,7 @@ export default function Home() {
   const [commercialClientId, setCommercialClientId] = useState("");
   const [emailTone, setEmailTone] = useState<"Primo contatto" | "Follow-up" | "Invio preventivo">("Invio preventivo");
   const [quoteDiscount, setQuoteDiscount] = useState(0);
+  const [editableQuote, setEditableQuote] = useState("");
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [clearPotentialsOpen, setClearPotentialsOpen] = useState(false);
@@ -632,6 +642,10 @@ export default function Home() {
     [commercialClient, priceItems, quoteDiscount]
   );
 
+  useEffect(() => {
+    setEditableQuote(generatedQuote);
+  }, [generatedQuote]);
+
   const totalPipeline = useMemo(() => filteredClients.length, [filteredClients]);
   const totalValue = useMemo(
     () => filteredClients.reduce((sum, client) => sum + Number(client.value.replace(/[^0-9]/g, "")), 0),
@@ -805,7 +819,7 @@ export default function Home() {
       return;
     }
     const outputs: Record<string, string> = {
-      "Genera offerta commerciale": `Offerta per ${client.company}: pacchetto ${client.services.join(", ")} da ${client.value}. Obiettivo: lead qualificati, visibilita locale e report ROI mensile. Prossimo follow-up: ${client.nextFollowUp || "entro 48 ore"}.`,
+      "Genera offerta commerciale": `Offerta per ${client.company}: pacchetto ${client.services.join(", ")} da ${client.value}. Obiettivo: lead qualificati, visibilita locale e report ROI mensile. Prossimo follow-up: ${formatItalianDate(client.nextFollowUp) || "entro 48 ore"}.`,
       "Crea piano editoriale": `Piano editoriale: 3 contenuti social a settimana, 1 articolo sponsorizzato, 1 newsletter mensile e creativita coordinate per ${client.sector}.`,
       "Analizza sito cliente": `Analisi sito ${client.company}: controllare Core Web Vitals, GA4, tracciamento conversioni, title SEO, meta description, pagine servizio e call-to-action.`,
       "Scrivi follow-up email": `Oggetto: Prossimo passo per ${client.company}\n\nCiao ${client.owner}, ti invio una proposta sintetica per trasformare la visibilita online in contatti misurabili. Possiamo sentirci questa settimana per chiudere obiettivi, budget e calendario?`
@@ -852,7 +866,7 @@ export default function Home() {
     await navigator.clipboard.writeText(content);
   }
 
-  async function recordCommercialAction(clientId: string, kind: "Email" | "Preventivo") {
+  async function recordCommercialAction(clientId: string, kind: "Email" | "Preventivo", quoteContent?: string) {
     if (!canEditCrm) return;
     const nextClients = crmClients.map((client) => {
       if (client.id !== clientId) return client;
@@ -864,7 +878,7 @@ export default function Home() {
           type: kind === "Email" ? "Email" as const : "Task" as const,
           at: todayValue(),
           by: "CRM",
-          notes: kind === "Email" ? `Bozza email preparata: ${emailTone}` : `Preventivo generato e scaricato. Sconto applicato: ${quoteDiscount}%.`,
+          notes: kind === "Email" ? `Bozza email preparata: ${emailTone}` : `Preventivo registrato. Sconto applicato: ${quoteDiscount}%. ${quoteContent ? "Testo preventivo modificato dall'operatore." : ""}`.trim(),
           sector: client.sector,
           assignedTo: client.owner || "Da assegnare",
           priority: client.priority,
@@ -1477,7 +1491,7 @@ export default function Home() {
                             <div>
                               <h4 className="font-semibold">{client.company}</h4>
                               <p className="mt-1 text-sm text-muted-foreground">{client.services.join(", ") || "Servizi da definire"}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">{client.owner || "Referente da assegnare"} · {client.nextFollowUp || "Follow-up non impostato"}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">{client.owner || "Referente da assegnare"} · {formatItalianDate(client.nextFollowUp) || "Follow-up non impostato"}</p>
                             </div>
                             <div className="text-left md:text-right">
                               <p className="font-semibold">{client.value}</p>
@@ -1554,21 +1568,26 @@ export default function Home() {
                             <p className="font-semibold text-foreground">Coerenza listino</p>
                             <p className="mt-1">Il preventivo usa i prezzi del listino quando i servizi dell'opportunita hanno lo stesso nome del listino attivo.</p>
                           </div>
-                          <pre className="min-h-72 whitespace-pre-wrap rounded-lg border bg-card p-4 text-sm leading-6 text-muted-foreground">{generatedQuote}</pre>
+                          <textarea
+                            value={editableQuote}
+                            onChange={(event) => setEditableQuote(event.target.value)}
+                            className="min-h-72 w-full resize-y rounded-lg border bg-card p-4 text-sm leading-6 text-muted-foreground outline-none transition focus:border-primary"
+                            aria-label="Preventivo modificabile"
+                          />
                           <div className="mt-4 flex flex-wrap justify-end gap-2">
                             <button disabled={!canEditCrm} type="button" onClick={() => void alignOpportunityToPriceList(commercialClient.id)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">
                               <ListChecks className="h-3.5 w-3.5" />
                               Allinea al listino
                             </button>
-                            <button type="button" onClick={() => void copyText(generatedQuote)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                            <button type="button" onClick={() => void copyText(editableQuote)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
                               <Copy className="h-3.5 w-3.5" />
                               Copia preventivo
                             </button>
-                            <button type="button" onClick={() => downloadTextFile(`preventivo-${normalizedText(commercialClient.company).replace(/\s+/g, "-") || "cliente"}.txt`, generatedQuote)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
+                            <button type="button" onClick={() => downloadTextFile(`preventivo-${normalizedText(commercialClient.company).replace(/\s+/g, "-") || "cliente"}.txt`, editableQuote)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition hover:border-primary hover:text-primary">
                               <Download className="h-3.5 w-3.5" />
                               Scarica TXT
                             </button>
-                            <button disabled={!canEditCrm} type="button" onClick={() => void recordCommercialAction(commercialClient.id, "Preventivo")} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                            <button disabled={!canEditCrm} type="button" onClick={() => void recordCommercialAction(commercialClient.id, "Preventivo", editableQuote !== generatedQuote ? editableQuote : undefined)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">
                               <ReceiptText className="h-3.5 w-3.5" />
                               Registra preventivo
                             </button>
@@ -1709,7 +1728,7 @@ export default function Home() {
                             </button>
                             <button onClick={() => setSelectedClientId(client.id)} className="grid h-8 w-8 place-items-center rounded-lg border text-muted-foreground transition hover:text-primary" title="Apri scheda"><FileText className="h-4 w-4" /></button>
                           </div>
-                          {(client.activityLog || []).length > 0 && <p className="mt-3 text-xs text-muted-foreground">Ultima attivita: {(client.activityLog || []).at(-1)?.type} · {(client.activityLog || []).at(-1)?.at} · {(client.activityLog || []).at(-1)?.by || "Non indicato"}</p>}
+                          {(client.activityLog || []).length > 0 && <p className="mt-3 text-xs text-muted-foreground">Ultima attivita: {(client.activityLog || []).at(-1)?.type} · {formatItalianDate((client.activityLog || []).at(-1)?.at)} · {(client.activityLog || []).at(-1)?.by || "Non indicato"}</p>}
                         </div>
                       ))}
                       {!potentialClients.length && <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">Nessun lead per i filtri selezionati.</p>}
@@ -1840,7 +1859,7 @@ export default function Home() {
                               </div>
                               <div className="text-left text-sm md:text-right">
                                 <p className="font-semibold">{activityDateTimeLabel(activity)}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">Promemoria: {activity.reminderAt || "Non impostato"}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Promemoria: {formatItalianDate(activity.reminderAt) || "Non impostato"}</p>
                                 <p className="mt-1 text-xs text-muted-foreground">A: {activity.assignedTo || activity.by || "Da assegnare"}</p>
                               </div>
                             </div>
@@ -1919,7 +1938,7 @@ export default function Home() {
                       {adSlots.map((ad) => (
                         <div key={ad.id} className="rounded-lg border bg-background p-4">
                           <h4 className="font-semibold">{ad.slot}</h4>
-                          <p className="mt-1 text-sm text-muted-foreground">CTR {ad.ctr} · rinnovo {ad.renewal}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">CTR {ad.ctr} · rinnovo {formatItalianDate(ad.renewal) || ad.renewal}</p>
                           <div className="my-4 h-2 rounded-full bg-muted">
                             <div className="h-2 rounded-full bg-primary" style={{ width: `${ad.booked}%` }} />
                           </div>
@@ -1985,7 +2004,7 @@ export default function Home() {
                                 className="w-full rounded-lg border bg-card p-3 text-left text-sm transition hover:border-primary"
                               >
                                 <span className="font-semibold">{post.title}</span>
-                                <span className="mt-1 block text-xs text-muted-foreground">{post.channel} · {post.date}</span>
+                                <span className="mt-1 block text-xs text-muted-foreground">{post.channel} · {formatItalianDate(post.date) || post.date}</span>
                               </button>
                             ))}
                           </div>
@@ -2175,7 +2194,7 @@ export default function Home() {
                         <div className="h-2 rounded-full bg-muted">
                           <div className="h-2 rounded-full bg-primary" style={{ width: `${ad.booked}%` }} />
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">Rinnovo tra {ad.renewal}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Rinnovo tra {formatItalianDate(ad.renewal) || ad.renewal}</p>
                         <button
                           onClick={() =>
                             setAdSlots((current) =>
@@ -2223,7 +2242,7 @@ export default function Home() {
                       >
                         <div>
                           <p className="text-sm font-semibold">{post.title}</p>
-                          <p className="text-xs text-muted-foreground">{post.channel} · {post.date}</p>
+                          <p className="text-xs text-muted-foreground">{post.channel} · {formatItalianDate(post.date) || post.date}</p>
                         </div>
                         <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{post.status}</span>
                       </button>
@@ -2330,7 +2349,7 @@ export default function Home() {
             <div className="mb-5 rounded-lg border bg-background p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Cronologia contatti e agenda</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Email" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Email</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Telefonata" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Telefonata</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Visita" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Visita</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Appuntamento" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Appuntamento</button><button type="button" onClick={() => setActivityEntry({ clientId: selectedClient.id, type: "Promemoria" })} className="h-8 rounded-lg border px-3 text-xs font-semibold">Promemoria</button></div></div>
               {(selectedClient.activityLog || []).length > 0 ? <div className="space-y-2">
-                {[...(selectedClient.activityLog || [])].reverse().map((activity) => <div key={activity.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{activity.type}</span><span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{activity.status || (activity.dueDate ? "Programmata" : "Fatta")}</span><span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">{activity.priority || selectedClient.priority}</span></div><span className="text-muted-foreground">{activityDateTimeLabel(activity)} · {activity.by || "Non indicato"}</span></div><div className="mt-2 grid gap-1 text-xs text-muted-foreground md:grid-cols-3"><span>Esito: {activity.outcome || "Da definire"}</span><span>A: {activity.assignedTo || activity.by || "Da assegnare"}</span><span>Promemoria: {activity.reminderAt || "Non impostato"}</span></div>{activity.notes && <p className="mt-2 text-muted-foreground">{activity.notes}</p>}</div>)}
+                {[...(selectedClient.activityLog || [])].reverse().map((activity) => <div key={activity.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{activity.type}</span><span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{activity.status || (activity.dueDate ? "Programmata" : "Fatta")}</span><span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">{activity.priority || selectedClient.priority}</span></div><span className="text-muted-foreground">{activityDateTimeLabel(activity)} · {activity.by || "Non indicato"}</span></div><div className="mt-2 grid gap-1 text-xs text-muted-foreground md:grid-cols-3"><span>Esito: {activity.outcome || "Da definire"}</span><span>A: {activity.assignedTo || activity.by || "Da assegnare"}</span><span>Promemoria: {formatItalianDate(activity.reminderAt) || "Non impostato"}</span></div>{activity.notes && <p className="mt-2 text-muted-foreground">{activity.notes}</p>}</div>)}
               </div> : <p className="text-sm text-muted-foreground">Nessuna attivita registrata.</p>}
             </div>
             <form key={selectedClient.id} onSubmit={saveClientDetails} className="grid gap-4 md:grid-cols-2">
